@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Productos</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <form class="d-flex me-2" method="get">
+            <input class="form-control me-2" type="search" name="q" placeholder="Buscar" aria-label="Search"
+                value="{{ request.GET.q|default:'' }}">
+            <button class="btn btn-outline-success" type="submit">Buscar</button>
+        </form>
+        <a href="{% url 'product_create' %}" class="btn btn-sm btn-outline-primary">Nuevo Producto</a>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Precio</th>
+                <th>Stock</th>
+                <th>Proveedor</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr class="{% if product.is_low_stock %}table-warning{% endif %}">
+                <td>{{ product.name }}</td>
+                <td>${{ product.price }}</td>
+                <td>{{ product.stock }}</td>
+                <td>{{ product.supplier }}</td>
+                <td>
+                    <a href="{% url 'product_update' pk=product.pk %}"
+                        class="btn btn-sm btn-outline-secondary">Editar</a>
+                    <a href="{% url 'product_delete' pk=product.pk %}"
+                        class="btn btn-sm btn-outline-danger">Eliminar</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

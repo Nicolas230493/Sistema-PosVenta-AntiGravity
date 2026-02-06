@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block content %}
+<h2>{{ title }}</h2>
+<p>Registrar entrada de mercancía (compra o ajuste).</p>
+<form method="post">
+    {% csrf_token %}
+
+    <div class="mb-3">
+        <label class="form-label">Producto</label>
+        {% render_field form.product class="form-control" %}
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Cantidad a ingresar</label>
+        {% render_field form.quantity class="form-control" %}
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Referencia (Ej: Factura Compra)</label>
+        {% render_field form.reference class="form-control" %}
+    </div>
+
+    <!-- Hidden movement type, always IN for this form -->
+    <input type="hidden" name="movement_type" value="IN">
+
+    <button type="submit" class="btn btn-primary">Registrar Entrada</button>
+    <a href="{% url 'inventory_history' %}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Punto de Venta</h5>
+                <p class="card-text">Registrar nuevas ventas.</p>
+                <a href="{% url 'pos' %}" class="btn btn-light btn-sm">Ir a POS</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Caja</h5>
+                <p class="card-text">Gestionar ingresos y egresos.</p>
+                <a href="{% url 'cash_dashboard' %}" class="btn btn-light btn-sm">Ver Caja</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Productos</h5>
+                <p class="card-text">Gestionar inventario.</p>
+                <a href="{% url 'product_list' %}" class="btn btn-light btn-sm">Ver Productos</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Inventario</h5>
+                <p class="card-text">Entradas y salidas.</p>
+                <a href="{% url 'inventory_history' %}" class="btn btn-light btn-sm">Ver Kardex</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-secondary mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Proveedores</h5>
+                <p class="card-text">Gestionar proveedores.</p>
+                <a href="{% url 'supplier_list' %}" class="btn btn-light btn-sm">Ver Proveedores</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

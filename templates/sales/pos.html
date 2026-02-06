@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Productos</h2>
+        <div class="mb-3">
+            <input type="text" id="search" class="form-control" placeholder="Buscar producto...">
+        </div>
+        <div class="row" id="product-list">
+            {% for product in products %}
+            <div class="col-md-4 mb-3 product-item" data-name="{{ product.name }}">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ product.name }}</h5>
+                        <p class="card-text">${{ product.price }}</p>
+                        <p class="card-text text-muted">Stock: {{ product.stock }}</p>
+                        <button class="btn btn-primary btn-sm add-to-cart" data-id="{{ product.id }}"
+                            data-name="{{ product.name }}" data-price="{{ product.price }}">Agregar</button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-md-4">
+        <h2>Carrito</h2>
+        <ul class="list-group mb-3" id="cart-items">
+            <!-- Items go here -->
+        </ul>
+        <h3>Total: $<span id="total-amount">0.00</span></h3>
+        <form method="post" id="pos-form">
+            {% csrf_token %}
+            <input type="hidden" name="cart_data" id="cart-data">
+            <button type="submit" class="btn btn-success w-100">Confirmar Venta</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+    let cart = [];
+
+    document.querySelectorAll('.add-to-cart').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            const price = parseFloat(btn.dataset.price);
+
+            const existing = cart.find(item => item.id === id);
+            if (existing) {
+                existing.qty++;
+            } else {
+                cart.push({ id, name, price, qty: 1 });
+            }
+            updateCart();
+        });
+    });
+
+    function updateCart() {
+        const list = document.getElementById('cart-items');
+        list.innerHTML = '';
+        let total = 0;
+        cart.forEach((item, index) => {
+            total += item.price * item.qty;
+            list.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between lh-sm">
+                    <div>
+                        <h6 class="my-0">${item.name}</h6>
+                        <small class="text-muted">x${item.qty}</small>
+                    </div>
+                    <div>
+                        <span class="text-muted">$${(item.price * item.qty).toFixed(2)}</span>
+                        <button class="btn btn-sm btn-danger ms-2" onclick="remove(${index})">X</button>
+                    </div>
+                </li>
+            `;
+        });
+        document.getElementById('total-amount').innerText = total.toFixed(2);
+        document.getElementById('cart-data').value = JSON.stringify(cart);
+    }
+
+    window.remove = function (index) {
+        cart.splice(index, 1);
+        updateCart();
+    };
+
+    document.getElementById('search').addEventListener('keyup', function () {
+        const val = this.value.toLowerCase();
+        document.querySelectorAll('.product-item').forEach(el => {
+            const name = el.dataset.name.toLowerCase();
+            el.style.display = name.includes(val) ? 'block' : 'none';
+        });
+    });
+</script>
+{% endblock %}
