@@ -1,108 +1,222 @@
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sistema POS{% endblock %}</title>
+    <title>{% block title %}Impulso Smart | POS{% endblock %}</title>
+    <!-- CSS CDNs -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
     <style>
+        :root {
+            --sidebar-width: 260px;
+            --bg-main: #f8f9fa;
+            --sidebar-dark: #1e293b;
+            --primary-accent: #3b82f6;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
         body {
-            background-color: #f8f9fa;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: #334155;
+            overflow-x: hidden;
         }
 
-        .navbar-brand {
-            font-weight: bold;
-        }
-
+        /* Sidebar Glassmorphism */
         .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-dark);
             min-height: 100vh;
-            background-color: #fff;
-            border-right: 1px solid #dee2e6;
+            position: fixed;
+            transition: var(--transition);
+            z-index: 1050;
         }
 
-        .nav-link {
-            color: #333;
+        .sidebar .nav-link {
+            color: #94a3b8;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            margin: 0.2rem 1rem;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
         }
 
-        .nav-link.active {
-            background-color: #e9ecef;
-            color: #0d6efd;
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background-color: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+
+        .sidebar .nav-link i {
+            margin-right: 12px;
+            font-size: 1.2rem;
+        }
+
+        /* Contenedor Principal */
+        main {
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+            transition: var(--transition);
+        }
+
+        /* Tarjetas Estilizadas */
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+            background: #ffffff;
+        }
+
+        /* Estilo de Tablas */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1);
+        }
+
+        .table thead th {
+            background-color: #f1f5f9;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            border: none;
+            padding: 1.2rem 1rem;
+        }
+
+        .table tbody td {
+            padding: 1rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        /* Progress Bar Delgada */
+        .progress-sm {
+            height: 6px;
+            border-radius: 10px;
+            background-color: #f1f5f9;
+        }
+
+        /* Badge Custom */
+        .badge-soft {
+            padding: 0.4em 0.8em;
+            font-weight: 500;
+        }
+
+        @media (max-width: 992px) {
+            .sidebar { margin-left: calc(-1 * var(--sidebar-width)); }
+            main { margin-left: 0; }
+            .sidebar.show { margin-left: 0; }
         }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
-
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'dashboard' %}">POS System</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    {% if user.is_authenticated %}
-                    <li class="nav-item">
-                        <span class="nav-link text-white">Hola, {{ user.username }}</span>
-                    </li>
-                    <li class="nav-item">
-                        <form action="{% url 'logout' %}" method="post" class="d-inline">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-light btn-sm ms-2">Salir</button>
-                        </form>
-                    </li>
-                    {% endif %}
-                </ul>
+    <div class="sidebar" id="sidebar">
+        <div class="p-4 mb-3 d-flex align-items-center">
+            <div class="bg-primary p-2 rounded-3 me-2">
+                <i class="bi bi-box-seam text-white fs-4"></i>
             </div>
+            <h4 class="text-white fw-bold mb-0">Impulso Smart</h4>
         </div>
-    </nav>
-
-    <div class="container-fluid">
-        <div class="row">
-            {% if user.is_authenticated %}
-            <div class="col-md-2 sidebar p-3 d-none d-md-block">
-                <div class="nav flex-column nav-pills">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
-                        href="{% url 'dashboard' %}"><i class="bi bi-speedometer2"></i> Dashboard</a>
-                    <a class="nav-link {% if 'pos' in request.path %}active{% endif %}" href="{% url 'pos' %}"><i
-                            class="bi bi-cart"></i> Punto de Venta</a>
-                    <a class="nav-link {% if 'products' in request.path and 'inventory' not in request.path %}active{% endif %}"
-                        href="{% url 'product_list' %}"><i class="bi bi-box"></i> Productos</a>
-                    <a class="nav-link {% if 'stock-entry' in request.path %}active{% endif %}"
-                        href="{% url 'stock_entry' %}"><i class="bi bi-box-arrow-in-down"></i> Entrada Stock</a>
-                    <a class="nav-link {% if 'inventory' in request.path %}active{% endif %}"
-                        href="{% url 'inventory_history' %}"><i class="bi bi-list-check"></i> Kardex</a>
-                    <a class="nav-link {% if 'suppliers' in request.path %}active{% endif %}"
-                        href="{% url 'supplier_list' %}"><i class="bi bi-truck"></i> Proveedores</a>
-                    <a class="nav-link {% if 'finance' in request.path %}active{% endif %}"
-                        href="{% url 'cash_dashboard' %}"><i class="bi bi-cash-coin"></i> Caja</a>
-                    <a class="nav-link {% if 'history' in request.path %}active{% endif %}"
-                        href="{% url 'sale_list' %}"><i class="bi bi-clock-history"></i> Historial Ventas</a>
-                </div>
-            </div>
-            <main class="col-md-10 ms-sm-auto col-lg-10 px-md-4 py-4">
-                {% if messages %}
-                {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-                {% endif %}
-                {% block content %}{% endblock %}
-            </main>
-            {% else %}
-            <main class="col-12 px-md-4 py-4">
-                {% block content_unauth %}{% endblock %}
-            </main>
-            {% endif %}
-        </div>
+        <nav class="nav flex-column">
+            <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}">
+                <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+            <a class="nav-link {% if 'pos' in request.path %}active{% endif %}" href="{% url 'sales:pos' %}">
+                <i class="bi bi-cart3"></i> Punto de Venta
+            </a>
+            <a class="nav-link {% if 'products' in request.path and 'history' not in request.path %}active{% endif %}" href="{% url 'products:product_list' %}">
+                <i class="bi bi-archive"></i> Inventario
+            </a>
+            <a class="nav-link {% if 'customers' in request.path %}active{% endif %}" href="{% url 'customers:customer_list' %}">
+                <i class="bi bi-people"></i> Clientes
+            </a>
+            <a class="nav-link {% if 'stock-entry' in request.path %}active{% endif %}" href="{% url 'products:stock_entry' %}">
+                <i class="bi bi-box-arrow-in-down"></i> Entrada Stock
+            </a>
+            <a class="nav-link {% if 'suppliers' in request.path %}active{% endif %}" href="{% url 'suppliers:supplier_list' %}">
+                <i class="bi bi-truck"></i> Proveedores
+            </a>
+            <a class="nav-link {% if 'finance' in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
+                <i class="bi bi-cash-coin"></i> Caja
+            </a>
+            <hr class="mx-3 border-secondary opacity-25">
+            <form action="{% url 'core:logout' %}" method="post" class="px-3">
+                {% csrf_token %}
+                <button type="submit" class="nav-link bg-transparent border-0 w-100 text-start">
+                    <i class="bi bi-box-arrow-left"></i> Salir
+                </button>
+            </form>
+        </nav>
     </div>
+
+    <main>
+        <header class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-dark d-lg-none me-3" onclick="document.getElementById('sidebar').classList.toggle('show')">
+                    <i class="bi bi-list"></i>
+                </button>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-0">
+                        <li class="breadcrumb-item"><a href="{% url 'core:dashboard' %}" class="text-decoration-none text-muted">Inicio</a></li>
+                        <li class="breadcrumb-item active fw-semibold">{% block page_title %}{% endblock %}</li>
+                    </ol>
+                </nav>
+            </div>
+            <div class="d-flex align-items-center">
+                <div class="dropdown">
+                    <button class="btn btn-white border shadow-sm dropdown-toggle rounded-pill px-3" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-2"></i><strong>{{ user.username }}</strong>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-gear me-2"></i>Configuración</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form action="{% url 'core:logout' %}" method="post">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item text-danger"><i class="bi bi-box-arrow-left me-2"></i>Cerrar Sesión</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+
+        <!-- Mensajes de Alerta -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show shadow-sm rounded-3 border-0 mb-4" role="alert">
+                    <div class="d-flex align-items-center">
+                        {% if message.tags == 'warning' %}
+                            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
+                        {% elif message.tags == 'danger' or message.tags == 'error' %}
+                            <i class="bi bi-x-circle-fill fs-4 me-3 text-danger"></i>
+                        {% else %}
+                            <i class="bi bi-check-circle-fill fs-4 me-3 text-success"></i>
+                        {% endif %}
+                        <div>{{ message }}</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        {% block content %}{% endblock %}
+
+        <footer class="mt-auto py-4 border-top bg-white">
+            <div class="container-fluid text-center">
+                <p class="text-muted small mb-0">
+                    &copy; 2026 Impulso Digital Sgo - Todos los derechos reservados
+                </p>
+            </div>
+        </footer>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     {% block extra_js %}{% endblock %}
 </body>
-
 </html>

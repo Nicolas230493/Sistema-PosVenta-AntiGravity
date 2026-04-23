@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Proveedores</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <a href="{% url 'supplier_create' %}" class="btn btn-sm btn-outline-primary">Nuevo Proveedor</a>
+        <a href="{% url 'suppliers:supplier_create' %}" class="btn btn-sm btn-outline-primary">Nuevo Proveedor</a>
     </div>
 </div>
 
@@ -25,9 +25,9 @@
                 <td>{{ supplier.phone }}</td>
                 <td>{{ supplier.email }}</td>
                 <td>
-                    <a href="{% url 'supplier_update' pk=supplier.pk %}"
+                    <a href="{% url 'suppliers:supplier_update' pk=supplier.pk %}"
                         class="btn btn-sm btn-outline-secondary">Editar</a>
-                    <a href="{% url 'supplier_delete' pk=supplier.pk %}"
+                    <a href="{% url 'suppliers:supplier_delete' pk=supplier.pk %}"
                         class="btn btn-sm btn-outline-danger">Eliminar</a>
                 </td>
             </tr>

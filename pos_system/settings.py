@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'suppliers',
     'products',
     'sales',
+    'customers',
     'finance',
     'widget_tweaks', # Recommended for form styling
 ]

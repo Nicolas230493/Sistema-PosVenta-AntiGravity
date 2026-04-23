@@ -1,33 +1,31 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-class CashMovement(models.Model):
-    TYPE_CHOICES = (
-        ('IN', 'Ingreso'),
-        ('OUT', 'Egreso'),
-    )
-    type = models.CharField(max_length=3, choices=TYPE_CHOICES, verbose_name="Tipo")
-    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Monto")
-    description = models.CharField(max_length=255, verbose_name="Descripción")
-    date = models.DateTimeField(auto_now_add=True)
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+class CashSession(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Cajero")
+    start_date = models.DateTimeField(auto_now_add=True, verbose_name="Apertura")
+    end_date = models.DateTimeField(null=True, blank=True, verbose_name="Cierre")
+    initial_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Monto Inicial")
+    total_sales_cash = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Ventas Efectivo")
+    total_expenses = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Egresos")
+    expected_final_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Final Esperado")
+    real_final_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Final Real")
+    is_open = models.BooleanField(default=True, verbose_name="¿Caja Abierta?")
+    notes = models.TextField(null=True, blank=True, verbose_name="Observaciones")
 
     def __str__(self):
-        return f"{self.get_type_display()} - {self.amount}"
+        return f"Caja {self.id} - {self.user.username if self.user else 'N/A'} ({'Abierta' if self.is_open else 'Cerrada'})"
 
     class Meta:
-        verbose_name = "Movimiento de Caja"
-        verbose_name_plural = "Movimientos de Caja"
-        ordering = ['-date']
+        verbose_name = "Arqueo de Caja"
+        verbose_name_plural = "Arqueos de Caja"
+        ordering = ['-start_date']
 
-class DailyClose(models.Model):
+class CashExpense(models.Model):
+    session = models.ForeignKey(CashSession, related_name='expenses', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Monto")
+    description = models.CharField(max_length=255, verbose_name="Concepto")
     date = models.DateTimeField(auto_now_add=True)
-    total_income = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total_expense = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    final_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
 
-    class Meta:
-        verbose_name = "Cierre de Caja"
-        verbose_name_plural = "Cierres de Caja"
-        ordering = ['-date']
+    def __str__(self):
+        return f"Egreso: {self.description} (${self.amount})"

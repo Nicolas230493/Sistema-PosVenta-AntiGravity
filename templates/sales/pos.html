@@ -1,5 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
+{% if last_sale_id %}
+    <script>
+        window.open("{% url 'sales:export_thermal_ticket' pk=last_sale_id %}", "_blank");
+    </script>
+{% endif %}
 <div class="row">
     <div class="col-md-8">
         <h2>Productos</h2>
@@ -23,21 +28,105 @@
         </div>
     </div>
     <div class="col-md-4">
-        <h2>Carrito</h2>
-        <ul class="list-group mb-3" id="cart-items">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2>Carrito</h2>
+            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+                <i class="bi bi-person-plus me-1"></i>Nuevo
+            </button>
+        </div>
+        
+        <!-- Selección de Cliente -->
+        <div class="mb-3">
+            <label class="form-label small text-muted">Seleccionar Cliente</label>
+            <select name="customer_id" id="customer-select" form="pos-form" class="form-select border-0 shadow-sm">
+                {% for customer in customers %}
+                    <option value="{{ customer.id }}" 
+                            data-balance="{{ customer.balance }}"
+                            {% if customer.id == default_customer.id %}selected{% endif %}>
+                        {{ customer.full_name }} {% if customer.balance > 0 %}(Deuda: ${{ customer.balance }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <div id="balance-alert" class="alert alert-warning py-1 px-2 mt-2 small d-none">
+                <i class="bi bi-exclamation-triangle me-1"></i> Este cliente tiene saldo deudor.
+            </div>
+        </div>
+
+        <!-- Método de Pago -->
+        <div class="mb-3">
+            <label class="form-label small text-muted">Método de Pago</label>
+            <select name="payment_method" id="payment-method" form="pos-form" class="form-select border-0 shadow-sm fw-bold">
+                <option value="CASH">💵 Efectivo</option>
+                <option value="CC">📝 Cuenta Corriente (Fiar)</option>
+            </select>
+        </div>
+
+        <ul class="list-group mb-3 shadow-sm" id="cart-items">
             <!-- Items go here -->
         </ul>
-        <h3>Total: $<span id="total-amount">0.00</span></h3>
+        <div class="card border-0 shadow-sm p-3 mb-3">
+            <h3 class="mb-0">Total: $<span id="total-amount">0.00</span></h3>
+        </div>
         <form method="post" id="pos-form">
             {% csrf_token %}
             <input type="hidden" name="cart_data" id="cart-data">
-            <button type="submit" class="btn btn-success w-100">Confirmar Venta</button>
+            <input type="hidden" name="customer_id" id="form-customer-id">
+            <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow">
+                <i class="bi bi-check2-circle me-2"></i>CONFIRMAR VENTA
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Nuevo Cliente Rápido -->
+<div class="modal fade" id="newCustomerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form action="{% url 'customers:customer_create' %}" method="post" class="modal-content border-0 shadow">
+            {% csrf_token %}
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">Registro Rápido de Cliente</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Nombre Completo *</label>
+                    <input type="text" name="full_name" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">DNI / CUIT</label>
+                    <input type="text" name="dni_cuit" class="form-control">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Teléfono</label>
+                    <input type="text" name="phone" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="submit" class="btn btn-primary w-100 rounded-pill">Guardar Cliente</button>
+            </div>
         </form>
     </div>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
+    // Sincronizar selección de cliente con el campo oculto del form
+    document.getElementById('customer-select').addEventListener('change', function() {
+        const selected = this.options[this.selectedIndex];
+        const balance = parseFloat(selected.dataset.balance || 0);
+        const alert = document.getElementById('balance-alert');
+        
+        document.getElementById('form-customer-id').value = this.value;
+        
+        if (balance > 0) {
+            alert.classList.remove('d-none');
+        } else {
+            alert.classList.add('d-none');
+        }
+    });
+    // Inicializar el valor
+    document.getElementById('form-customer-id').value = document.getElementById('customer-select').value;
+
     let cart = [];
 
     document.querySelectorAll('.add-to-cart').forEach(btn => {

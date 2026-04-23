@@ -1,11 +1,18 @@
 from django.db import models
 from django.contrib.auth.models import User
 from products.models import Product
+from customers.models import Customer
 
 class Sale(models.Model):
+    PAYMENT_METHODS = (
+        ('CASH', 'Efectivo'),
+        ('CC', 'Cuenta Corriente'),
+    )
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)
     date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total")
+    payment_method = models.CharField(max_length=10, choices=PAYMENT_METHODS, default='CASH', verbose_name="Método de Pago")
 
     def __str__(self):
         return f"Venta #{self.id}"

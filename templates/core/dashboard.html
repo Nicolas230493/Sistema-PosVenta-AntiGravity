@@ -1,54 +1,88 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Dashboard</h1>
-</div>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Dashboard de Urgencias</h1>
+    </div>
 
-<div class="row">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Punto de Venta</h5>
-                <p class="card-text">Registrar nuevas ventas.</p>
-                <a href="{% url 'pos' %}" class="btn btn-light btn-sm">Ir a POS</a>
+    <!-- 2. TARJETAS DE RESUMEN (GRID) -->
+    <div class="row g-3 mb-4">
+        <!-- Tarjeta Agotados -->
+        <div class="col-md-4">
+            <div class="card bg-danger text-white h-100 shadow">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Agotados</h5>
+                    <p class="display-4 fw-bold">{{ totales.agotados }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- Tarjeta Stock Bajo -->
+        <div class="col-md-4">
+            <div class="card bg-warning text-dark h-100 shadow">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Por Reponer</h5>
+                    <p class="display-4 fw-bold">{{ totales.reponer }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- Tarjeta Vencimientos -->
+        <div class="col-md-4">
+            <div class="card bg-info text-white h-100 shadow">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Próximos a Vencer</h5>
+                    <p class="display-4 fw-bold">{{ totales.vencen }}</p>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-success mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Caja</h5>
-                <p class="card-text">Gestionar ingresos y egresos.</p>
-                <a href="{% url 'cash_dashboard' %}" class="btn btn-light btn-sm">Ver Caja</a>
-            </div>
+
+    <!-- 3. LISTADO RÁPIDO DE DETALLES -->
+    <div class="row">
+        <!-- Detalle Agotados -->
+        <div class="col-md-4">
+            <ul class="list-group shadow-sm">
+                <li class="list-group-item list-group-item-danger d-flex justify-content-between align-items-center">
+                    Lista de Faltantes
+                </li>
+                {% for p in agotados %}
+                    <li class="list-group-item small">{{ p.name }}</li>
+                {% empty %}
+                    <li class="list-group-item text-muted small italic">Todo en stock</li>
+                {% endfor %}
+            </ul>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-info mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Productos</h5>
-                <p class="card-text">Gestionar inventario.</p>
-                <a href="{% url 'product_list' %}" class="btn btn-light btn-sm">Ver Productos</a>
-            </div>
+
+        <!-- Detalle Stock Bajo -->
+        <div class="col-md-4">
+            <ul class="list-group shadow-sm">
+                <li class="list-group-item list-group-item-warning d-flex justify-content-between align-items-center">
+                    Umbral de Stock Bajo
+                </li>
+                {% for p in por_reponer %}
+                    <li class="list-group-item small d-flex justify-content-between">
+                        {{ p.name }} <span>({{ p.stock }} uni.)</span>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item text-muted small italic">Suficiente stock</li>
+                {% endfor %}
+            </ul>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-warning mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Inventario</h5>
-                <p class="card-text">Entradas y salidas.</p>
-                <a href="{% url 'inventory_history' %}" class="btn btn-light btn-sm">Ver Kardex</a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-secondary mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Proveedores</h5>
-                <p class="card-text">Gestionar proveedores.</p>
-                <a href="{% url 'supplier_list' %}" class="btn btn-light btn-sm">Ver Proveedores</a>
-            </div>
+
+        <!-- Detalle Vencimientos -->
+        <div class="col-md-4">
+            <ul class="list-group shadow-sm">
+                <li class="list-group-item list-group-item-info text-white d-flex justify-content-between align-items-center">
+                    Vencimientos < 7 días
+                </li>
+                {% for p in vencen_pronto %}
+                    <li class="list-group-item small d-flex justify-content-between">
+                        {{ p.name }} <span class="badge bg-light text-dark">{{ p.expiry_date|date:"d/m" }}</span>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item text-muted small italic">Sin vencimientos próximos</li>
+                {% endfor %}
+            </ul>
         </div>
     </div>
 </div>
