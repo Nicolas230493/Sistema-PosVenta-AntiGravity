@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Inteligencia de Ventas{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="row g-4 mb-4">
+    <!-- Gráfico de Horas Pico -->
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4">Ventas por Hora del Día</h5>
+                <canvas id="hoursChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ranking de Proveedores -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4 text-primary">Ranking Proveedores</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="small text-muted">
+                            <tr>
+                                <th>Proveedor</th>
+                                <th class="text-end">Monto Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in supplier_ranking %}
+                            <tr>
+                                <td class="fw-medium small text-truncate" style="max-width: 150px;">{{ s.product__supplier__name|default:"General" }}</td>
+                                <td class="text-end fw-bold text-success">${{ s.total_spent|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="2" class="text-center py-4 text-muted small">Sin datos de compras</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Productos Muertos -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold mb-0 text-danger"><i class="bi bi-ghost me-2"></i>Productos Muertos (60 días sin ventas)</h5>
+                    <span class="badge bg-danger rounded-pill">{{ dead_products.count }} productos</span>
+                </div>
+                <div class="row row-cols-1 row-cols-md-3 g-3">
+                    {% for p in dead_products %}
+                    <div class="col">
+                        <div class="p-3 bg-light rounded-3 border d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold">{{ p.name }}</span>
+                            <span class="badge bg-white text-dark border shadow-sm">Stock: {{ p.stock }}</span>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="col-12 text-center py-5">
+                        <i class="bi bi-check2-circle fs-1 text-success mb-3"></i>
+                        <p class="text-muted">¡Increíble! Todos tus productos han tenido ventas recientes.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const hourCtx = document.getElementById('hoursChart').getContext('2d');
+    const hourData = {{ sales_hour_data|safe }};
+    
+    new Chart(hourCtx, {
+        type: 'bar',
+        data: {
+            labels: hourData.map(d => d.hour + ':00hs'),
+            datasets: [{
+                label: 'Cantidad de Ventas',
+                data: hourData.map(d => d.count),
+                backgroundColor: 'rgba(67, 24, 255, 0.8)',
+                borderColor: '#4318ff',
+                borderWidth: 1,
+                borderRadius: 8,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { display: false } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+</script>
+{% endblock %}

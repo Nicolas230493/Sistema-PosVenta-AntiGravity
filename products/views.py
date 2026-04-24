@@ -65,6 +65,128 @@ def product_delete(request, pk):
         return redirect('products:product_list')
     return render(request, 'products/product_confirm_delete.html', {'product': product})
 
+from django.http import HttpResponse, FileResponse
+from django.contrib.admin.views.decorators import staff_member_required
+from .models import Category, StockLoss
+from django.db.models import F
+import os
+from pos_system.settings import BASE_DIR
+
+@staff_member_required
+def download_backup(request):
+    db_path = os.path.join(BASE_DIR, 'db.sqlite3')
+    if os.path.exists(db_path):
+        timestamp = timezone.now().strftime('%Y-%m-%d_%H%M')
+        response = FileResponse(open(db_path, 'rb'), content_type='application/x-sqlite3')
+        response['Content-Disposition'] = f'attachment; filename=backup_impulso_smart_{timestamp}.sqlite3'
+        messages.success(request, "Copia de seguridad generada con éxito.")
+        return response
+    messages.error(request, "No se encontró el archivo de base de datos.")
+    return redirect('products:admin_tools')
+
+@staff_member_required
+def bulk_price_update(request):
+    if request.method == 'POST':
+        category_id = request.POST.get('category')
+        percentage = float(request.POST.get('percentage', 0))
+        
+        if category_id:
+            products = Product.objects.filter(category_id=category_id)
+            # Uso de F expressions para eficiencia a nivel de DB
+            products.update(price=F('price') * (1 + (percentage / 100)))
+            messages.success(request, f"Precios actualizados para {products.count()} productos (+{percentage}%).")
+        else:
+            # Si no hay categoría, actualizar todos
+            Product.objects.all().update(price=F('price') * (1 + (percentage / 100)))
+            messages.success(request, f"Todos los precios actualizados (+{percentage}%).")
+            
+        return redirect('products:admin_tools')
+    
+    categories = Category.objects.all()
+    return render(request, 'products/admin_tools.html', {'categories': categories})
+
+@login_required
+def stock_loss_create(request):
+    if request.method == 'POST':
+        product_id = request.POST.get('product')
+        qty = int(request.POST.get('quantity', 0))
+        reason = request.POST.get('reason')
+        
+        product = get_object_or_404(Product, id=product_id)
+        if product.stock >= qty:
+            # Registrar Baja
+            loss = StockLoss.objects.create(
+                product=product,
+                quantity=qty,
+                reason=reason,
+                user=request.user
+            )
+            # Actualizar Stock y Movimientos
+            product.stock -= qty
+            product.save()
+            
+            InventoryMovement.objects.create(
+                product=product,
+                quantity=qty,
+                movement_type='OUT',
+                reference=f"BAJA: {loss.get_reason_display()}",
+                user=request.user
+            )
+            messages.success(request, f"Baja registrada: {qty} uni. de {product.name}.")
+        else:
+            messages.error(request, "Stock insuficiente para realizar la baja.")
+            
+    return redirect('products:product_list')
+
+from django.db.models import Sum, Count, F
+from django.db.models.functions import ExtractHour
+from datetime import timedelta
+from sales.models import Sale, SaleDetail
+
+@staff_member_required
+def business_intelligence(request):
+    today = timezone.localdate()
+    
+    # 1. Horas Pico (Ventas por hora)
+    sales_by_hour = Sale.objects.annotate(
+        hour=ExtractHour('date')
+    ).values('hour').annotate(
+        count=Count('id'),
+        total=Sum('total_amount')
+    ).order_by('hour')
+    
+    # 2. Productos Muertos (Sin ventas en 60 días)
+    sixty_days_ago = timezone.now() - timedelta(days=60)
+    sold_ids = SaleDetail.objects.filter(sale__date__gte=sixty_days_ago).values_list('product_id', flat=True)
+    dead_products = Product.objects.exclude(id__in=sold_ids).order_by('name')
+    
+    # 3. Ranking de Proveedores (Monto total comprado)
+    supplier_ranking = InventoryMovement.objects.filter(
+        movement_type='IN'
+    ).values('product__supplier__name').annotate(
+        total_spent=Sum(F('quantity') * F('cost_price')),
+        qty_total=Sum('quantity')
+    ).order_by('-total_spent')
+
+    return render(request, 'products/bi_dashboard.html', {
+        'sales_hour_data': list(sales_by_hour),
+        'dead_products': dead_products,
+        'supplier_ranking': supplier_ranking,
+        'title': 'Inteligencia de Ventas'
+    })
+
+@login_required
+def order_assistant(request):
+    # Productos con stock bajo
+    low_stock_products = Product.objects.filter(stock__lte=F('min_stock')).select_related('supplier')
+    
+    # Agrupar por proveedor para generar mensajes de WhatsApp
+    context = {
+        'low_stock_products': low_stock_products,
+        'title': 'Asistente de Pedidos'
+    }
+    return render(request, 'products/order_assistant.html', context)
+
 @login_required
 def inventory_history(request):
     movements = InventoryMovement.objects.all()

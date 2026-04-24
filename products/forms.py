@@ -20,10 +20,16 @@ class InventoryMovementForm(forms.ModelForm):
     class Meta:
         model = InventoryMovement
         fields = ['product', 'quantity', 'cost_price', 'sale_price', 'reference']
+        labels = {
+            'cost_price': 'Precio de Costo (Compra)',
+            'sale_price': 'Precio de Venta (Unitario)',
+        }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['movement_type'].initial = 'IN'
+        # Aseguramos que los campos de precio sean obligatorios para la entrada de stock
         self.fields['cost_price'].required = True
         self.fields['sale_price'].required = True
+        # Aplicamos clases de Bootstrap a todos los campos si fuera necesario, 
+        # aunque el template ya usa widget_tweaks.
 

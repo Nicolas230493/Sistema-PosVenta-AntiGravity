@@ -1,10 +1,22 @@
 from django.db import models
 from suppliers.models import Supplier
 
+class Category(models.Model):
+    name = models.CharField(max_length=100, verbose_name="Nombre de Categoría")
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        verbose_name = "Categoría"
+        verbose_name_plural = "Categorías"
+
 class Product(models.Model):
     sku = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="SKU / Código de Barras")
     name = models.CharField(max_length=200, verbose_name="Nombre")
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
+    # ... rest of fields ...
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Venta")
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo")
     stock = models.IntegerField(default=0, verbose_name="Stock")
@@ -42,8 +54,13 @@ class Product(models.Model):
 
 from django.contrib.auth.models import User
 
+MOVEMENT_TYPES = [
+    ('IN', 'Entrada'),
+    ('OUT', 'Salida'),
+    ('ADJ', 'Ajuste'),
+]
+
 class InventoryMovement(models.Model):
-    # ... campos existentes ...
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='movements')
     quantity = models.IntegerField(verbose_name="Cantidad")
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Costo")
@@ -60,3 +77,38 @@ class InventoryMovement(models.Model):
         verbose_name = "Movimiento de Inventario"
         verbose_name_plural = "Movimientos de Inventario"
         ordering = ['-date']
+
+LOSS_REASONS = [
+    ('EXP', 'Vencimiento'),
+    ('DAM', 'Rotura'),
+    ('INT', 'Consumo Interno'),
+    ('OTH', 'Otros'),
+]
+
+class StockLoss(models.Model):
+    # ... (campos existentes)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='losses')
+    quantity = models.PositiveIntegerField(verbose_name="Cantidad")
+    reason = models.CharField(max_length=3, choices=LOSS_REASONS, verbose_name="Motivo")
+    date = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True, null=True, verbose_name="Notas adicionales")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    def __str__(self):
+        return f"Baja: {self.product.name} - {self.quantity} ({self.get_reason_display()})"
+
+    class Meta:
+        verbose_name = "Baja de Stock"
+        verbose_name_plural = "Bajas de Stock"
+
+class PriceLog(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_logs')
+    old_price = models.DecimalField(max_digits=10, decimal_places=2)
+    new_price = models.DecimalField(max_digits=10, decimal_places=2)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date']
+        verbose_name = "Log de Precios"
+        verbose_name_plural = "Logs de Precios"
