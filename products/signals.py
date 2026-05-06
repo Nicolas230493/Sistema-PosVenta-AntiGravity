@@ -1,27 +1,42 @@
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from .models import Product, PriceLog
-from sales.models import Sale
+from .models import Product, PriceLog, StockLoss
+from core.models import ActivityLog
+import threading
 
-@receiver(post_save, sender=Sale)
-def update_customer_points(sender, instance, created, **kwargs):
-    if created and instance.customer:
-        # 1 punto cada $1000 de venta
-        new_points = int(instance.total_amount // 1000)
-        if new_points > 0:
-            instance.customer.points += new_points
-            instance.customer.save()
+# Objeto local al hilo para capturar el usuario actual en signals (opcional, pero util si se implementa middleware)
+_thread_locals = threading.local()
 
 @receiver(pre_save, sender=Product)
 def log_price_change(sender, instance, **kwargs):
     if instance.pk:
         try:
-            old_instance = Product.objects.get(pk=instance.pk)
-            if old_instance.price != instance.price:
+            old_product = Product.objects.get(pk=instance.pk)
+            if old_product.price != instance.price:
                 PriceLog.objects.create(
                     product=instance,
-                    old_price=old_instance.price,
-                    new_price=instance.price
+                    old_price=old_product.price,
+                    new_price=instance.price,
+                    user=getattr(_thread_locals, 'user', None)
+                )
+                ActivityLog.objects.create(
+                    user=getattr(_thread_locals, 'user', None),
+                    action=f"Cambio de precio: {instance.name} (${old_product.price} -> ${instance.price})",
+                    module="Productos"
                 )
         except Product.DoesNotExist:
             pass
+
+@receiver(post_save, sender=StockLoss)
+def log_stock_loss(sender, instance, created, **kwargs):
+    if created:
+        # Reducir stock del producto
+        product = instance.product
+        product.stock -= instance.quantity
+        product.save()
+        
+        ActivityLog.objects.create(
+            user=instance.user,
+            action=f"Baja de stock: {product.name} ({instance.quantity} uni.) - Motivo: {instance.get_reason_display()}",
+            module="Inventario"
+        )

@@ -1,157 +1,57 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acceso | Impulso Smart</title>
-    
-    <!-- CSS Core -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    
-    <style>
-        :root {
-            --primary-color: #4318ff;
-            --bg-gradient: linear-gradient(135deg, #0b1437 0%, #111c44 100%);
-        }
+{% extends 'base.html' %}
+{% load widget_tweaks %}
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg-gradient);
-            height: 100vh;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
+{% block page_title %}Acceso al Sistema{% endblock %}
 
-        .login-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 25px;
-            width: 100%;
-            max-width: 420px;
-            padding: 40px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        }
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 70vh;">
+    <div class="col-md-5 col-lg-4">
+        <div class="text-center mb-5">
+            <div class="bg-primary d-inline-block p-3 rounded-4 shadow-sm mb-3">
+                <i class="bi bi-box-seam text-white fs-1"></i>
+            </div>
+            <h2 class="fw-bold">Bienvenido de nuevo</h2>
+            <p class="opacity-50">Ingresa tus credenciales para continuar</p>
+        </div>
 
-        .logo-icon {
-            width: 65px;
-            height: 65px;
-            background: var(--primary-color);
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-            box-shadow: 0 10px 20px rgba(67, 24, 255, 0.3);
-        }
+        <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="card-body p-5">
+                <form method="post">
+                    {% csrf_token %}
+                    {% if form.non_field_errors %}
+                        {% for error in form.non_field_errors %}
+                            <div class="alert alert-danger border-0 small mb-4">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
 
-        .form-control {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            color: #fff;
-            padding: 12px 15px;
-            transition: 0.3s;
-        }
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small opacity-75">Usuario</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-body-secondary border-0"><i class="bi bi-person"></i></span>
+                            {% render_field form.username class="form-control bg-body-secondary border-0" placeholder="Tu usuario" %}
+                        </div>
+                    </div>
 
-        .form-control:focus {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: var(--primary-color);
-            color: #fff;
-            box-shadow: none;
-        }
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small opacity-75">Contraseña</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-body-secondary border-0"><i class="bi bi-lock"></i></span>
+                            {% render_field form.password class="form-control bg-body-secondary border-0" placeholder="••••••••" %}
+                        </div>
+                    </div>
 
-        .form-control::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        .btn-primary {
-            background: var(--primary-color);
-            border: none;
-            border-radius: 12px;
-            padding: 12px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            margin-top: 10px;
-            transition: 0.3s;
-        }
-
-        .btn-primary:hover {
-            background: #3311cc;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(67, 24, 255, 0.4);
-        }
-
-        .footer-text {
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 0.8rem;
-            text-align: center;
-            margin-top: 30px;
-        }
+                    <div class="d-grid mt-5">
+                        <button type="submit" class="btn btn-primary btn-lg rounded-pill py-3 fw-bold shadow-sm">
+                            INGRESAR AL SISTEMA
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
         
-        .alert {
-            border-radius: 12px;
-            background: rgba(220, 53, 69, 0.2);
-            border: 1px solid rgba(220, 53, 69, 0.4);
-            color: #ff8585;
-            font-size: 0.9rem;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="login-card animate__animated animate__fadeIn">
-        <div class="text-center mb-4">
-            <div class="logo-icon">
-                <i class="bi bi-box-seam text-white fs-2"></i>
-            </div>
-            <h3 class="text-white fw-800 mb-1">Impulso Smart</h3>
-            <p class="text-white-50 small">Sistema de Gestión de Ventas</p>
-        </div>
-
-        {% if form.errors %}
-            <div class="alert text-center mb-4">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i> Usuario o clave inválidos
-            </div>
-        {% endif %}
-
-        <form method="post">
-            {% csrf_token %}
-            {% load widget_tweaks %}
-            
-            <div class="mb-3">
-                <label class="form-label text-white-50 small fw-bold">USUARIO</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-transparent border-0 text-white-50"><i class="bi bi-person"></i></span>
-                    {% render_field form.username class="form-control" placeholder="Ingresa tu usuario" %}
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="form-label text-white-50 small fw-bold">CONTRASEÑA</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-transparent border-0 text-white-50"><i class="bi bi-lock"></i></span>
-                    {% render_field form.password class="form-control" placeholder="••••••••" %}
-                </div>
-            </div>
-
-            <div class="d-grid">
-                <button type="submit" class="btn btn-primary">
-                    INICIAR SESIÓN
-                </button>
-            </div>
-        </form>
-
-        <div class="footer-text">
-            &copy; 2026 Impulso Digital Sgo <br> Todos los derechos reservados
-        </div>
+        <p class="text-center mt-4 small opacity-50">
+            &copy; 2026 Impulso Smart POS. Todos los derechos reservados.
+        </p>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+</div>
+{% endblock %}

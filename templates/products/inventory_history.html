@@ -1,40 +1,61 @@
 {% extends 'base.html' %}
 
+{% block page_title %}Historial de Movimientos{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Historial de Inventario (Kardex)</h1>
-    <div class="btn-toolbar mb-2 mb-md-0">
-        <a href="{% url 'stock_entry' %}" class="btn btn-sm btn-outline-primary">Registrar Entrada</a>
+<div class="card p-3 mb-4 border-0 shadow-sm">
+    <div class="row g-3 align-items-center">
+        <div class="col-md-6">
+            <h5 class="mb-0 fw-bold opacity-75">Kardex de Inventario</h5>
+        </div>
+        <div class="col-md-6 text-end">
+            <a href="{% url 'products:stock_entry' %}" class="btn btn-primary rounded-pill px-4 shadow-sm">
+                <i class="bi bi-box-arrow-in-down me-2"></i>Registrar Entrada
+            </a>
+        </div>
     </div>
 </div>
 
-<div class="table-responsive">
-    <table class="table table-striped table-sm">
-        <thead>
+<div class="table-container shadow-sm overflow-hidden rounded-4">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="bg-body-tertiary">
             <tr>
-                <th>Fecha</th>
+                <th class="ps-4">Fecha y Hora</th>
                 <th>Producto</th>
                 <th>Tipo</th>
                 <th>Cantidad</th>
                 <th>Referencia</th>
-                <th>Usuario</th>
+                <th class="pe-4">Usuario</th>
             </tr>
         </thead>
         <tbody>
             {% for m in movements %}
             <tr>
-                <td>{{ m.date|date:"d/m/Y H:i" }}</td>
-                <td>{{ m.product.name }}</td>
+                <td class="ps-4 small">{{ m.date|date:"d/m/Y H:i" }}</td>
+                <td class="fw-bold">{{ m.product.name }}</td>
                 <td>
                     {% if m.movement_type == 'IN' %}
-                    <span class="badge bg-success">Entrada</span>
+                        <span class="badge bg-success-subtle text-success rounded-pill border border-success-subtle px-3">
+                            <i class="bi bi-arrow-down-left me-1"></i>Entrada
+                        </span>
                     {% else %}
-                    <span class="badge bg-danger">Salida</span>
+                        <span class="badge bg-danger-subtle text-danger rounded-pill border border-danger-subtle px-3">
+                            <i class="bi bi-arrow-up-right me-1"></i>Salida
+                        </span>
                     {% endif %}
                 </td>
-                <td>{{ m.quantity }}</td>
-                <td>{{ m.reference }}</td>
-                <td>{{ m.user.username }}</td>
+                <td class="fw-bold">{{ m.quantity }}</td>
+                <td>{{ m.reference|default:"---" }}</td>
+                <td class="pe-4 small">
+                    <i class="bi bi-person-circle me-1 opacity-50"></i>{{ m.user.username }}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="text-center py-5">
+                    <i class="bi bi-clock-history fs-1 text-body-secondary mb-3 d-block"></i>
+                    <p class="text-body-secondary">No hay movimientos registrados en el historial.</p>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

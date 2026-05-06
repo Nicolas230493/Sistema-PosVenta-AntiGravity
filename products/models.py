@@ -12,7 +12,7 @@ class Category(models.Model):
         verbose_name_plural = "Categorías"
 
 class Product(models.Model):
-    sku = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="SKU / Código de Barras")
+    sku = models.CharField(max_length=50, unique=True, default='000000', verbose_name="SKU / Código de Barras")
     name = models.CharField(max_length=200, verbose_name="Nombre")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)

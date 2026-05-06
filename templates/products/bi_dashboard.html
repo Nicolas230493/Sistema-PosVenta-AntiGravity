@@ -23,7 +23,7 @@
                 <h5 class="fw-bold mb-4 text-primary">Ranking Proveedores</h5>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle">
-                        <thead class="small text-muted">
+                        <thead class="small opacity-75">
                             <tr>
                                 <th>Proveedor</th>
                                 <th class="text-end">Monto Total</th>
@@ -36,7 +36,7 @@
                                 <td class="text-end fw-bold text-success">${{ s.total_spent|floatformat:2 }}</td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="2" class="text-center py-4 text-muted small">Sin datos de compras</td></tr>
+                            <tr><td colspan="2" class="text-center py-4 opacity-75 small">Sin datos de compras</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -58,15 +58,15 @@
                 <div class="row row-cols-1 row-cols-md-3 g-3">
                     {% for p in dead_products %}
                     <div class="col">
-                        <div class="p-3 bg-light rounded-3 border d-flex justify-content-between align-items-center">
+                        <div class="p-3 bg-body-secondary rounded-3 border d-flex justify-content-between align-items-center">
                             <span class="small fw-bold">{{ p.name }}</span>
-                            <span class="badge bg-white text-dark border shadow-sm">Stock: {{ p.stock }}</span>
+                            <span class="badge bg-body text-body-emphasis border shadow-sm">Stock: {{ p.stock }}</span>
                         </div>
                     </div>
                     {% empty %}
                     <div class="col-12 text-center py-5">
                         <i class="bi bi-check2-circle fs-1 text-success mb-3"></i>
-                        <p class="text-muted">¡Increíble! Todos tus productos han tenido ventas recientes.</p>
+                        <p class="opacity-75">¡Increíble! Todos tus productos han tenido ventas recientes.</p>
                     </div>
                     {% endfor %}
                 </div>
@@ -78,6 +78,7 @@
 <script>
     const hourCtx = document.getElementById('hoursChart').getContext('2d');
     const hourData = {{ sales_hour_data|safe }};
+    const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim() || '#4318ff';
     
     new Chart(hourCtx, {
         type: 'bar',
@@ -86,8 +87,8 @@
             datasets: [{
                 label: 'Cantidad de Ventas',
                 data: hourData.map(d => d.count),
-                backgroundColor: 'rgba(67, 24, 255, 0.8)',
-                borderColor: '#4318ff',
+                backgroundColor: primaryColor + 'cc',
+                borderColor: primaryColor,
                 borderWidth: 1,
                 borderRadius: 8,
             }]
@@ -99,8 +100,15 @@
                 legend: { display: false }
             },
             scales: {
-                y: { beginAtZero: true, grid: { display: false } },
-                x: { grid: { display: false } }
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: 'rgba(128,128,128,0.1)' },
+                    ticks: { color: 'rgba(128,128,128,0.8)' }
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { color: 'rgba(128,128,128,0.8)' }
+                }
             }
         }
     });

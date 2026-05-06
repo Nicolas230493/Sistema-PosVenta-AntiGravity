@@ -10,12 +10,15 @@ from products.models import Product, StockLoss
 def dashboard_view(request):
     today = timezone.localdate()
     next_week = today + timedelta(days=7)
+    critical_expiry_date = today + timedelta(days=5)
 
-    # ... consultas existentes ...
     agotados = Product.objects.filter(stock__lte=0)
     por_reponer = Product.objects.filter(stock__gt=0, stock__lte=F('min_stock'))
     vencen_pronto = Product.objects.filter(expiry_date__range=[today, next_week]).order_by('expiry_date')
     
+    # Productos venciendo en menos de 5 días
+    vencimientos_criticos = Product.objects.filter(expiry_date__range=[today, critical_expiry_date])
+
     # Bajas recientes (últimos 30 días)
     last_month = today - timedelta(days=30)
     bajas_recientes = StockLoss.objects.filter(date__gte=last_month).select_related('product').order_by('-date')
@@ -26,6 +29,7 @@ def dashboard_view(request):
         'agotados': agotados,
         'por_reponer': por_reponer,
         'vencen_pronto': vencen_pronto,
+        'vencimientos_criticos': vencimientos_criticos,
         'bajas_recientes': bajas_recientes[:10], # Solo las últimas 10 para el resumen
         'totales': {
             'agotados': agotados.count(),

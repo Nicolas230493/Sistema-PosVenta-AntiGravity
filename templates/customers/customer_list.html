@@ -7,7 +7,7 @@
     <div class="row g-3 align-items-center">
         <div class="col-md-6">
             <form method="get" class="input-group">
-                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <span class="input-group-text bg-body-secondary border-end-0 text-body-secondary"><i class="bi bi-search"></i></span>
                 <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Buscar por nombre o DNI..." value="{{ request.GET.q|default:'' }}">
             </form>
         </div>
@@ -19,9 +19,9 @@
     </div>
 </div>
 
-<div class="table-container shadow-sm">
+<div class="table-container shadow-sm overflow-hidden rounded-4">
     <table class="table table-hover align-middle mb-0">
-        <thead>
+        <thead class="bg-body-tertiary">
             <tr>
                 <th class="ps-4">Nombre Completo</th>
                 <th>DNI / CUIT</th>
@@ -34,9 +34,9 @@
             {% for customer in customers %}
             <tr>
                 <td class="ps-4">
-                    <div class="fw-bold text-dark">{{ customer.full_name }}</div>
+                    <div class="fw-bold">{{ customer.full_name }}</div>
                     {% if customer.dni_cuit == '00000000' %}
-                        <span class="badge bg-light text-muted border small">Sistema</span>
+                        <span class="badge bg-body-secondary text-body-secondary border small">Sistema</span>
                     {% endif %}
                 </td>
                 <td>{{ customer.dni_cuit|default:"---" }}</td>
@@ -44,11 +44,11 @@
                 <td>{{ customer.email|default:"---" }}</td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
-                        <a href="{% url 'customers:customer_update' pk=customer.pk %}" class="btn btn-white btn-sm border" title="Editar">
+                        <a href="{% url 'customers:customer_update' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>
                         {% if customer.dni_cuit != '00000000' %}
-                        <a href="{% url 'customers:customer_delete' pk=customer.pk %}" class="btn btn-white btn-sm border" title="Eliminar">
+                        <a href="{% url 'customers:customer_delete' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm border" title="Eliminar">
                             <i class="bi bi-trash text-danger"></i>
                         </a>
                         {% endif %}

@@ -5,26 +5,36 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm overflow-hidden rounded-4">
+            <div class="card-header bg-primary text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-person-plus me-2"></i>Información del Cliente</h5>
+            </div>
             <div class="card-body p-4">
                 <form method="post">
                     {% csrf_token %}
-                    {% for field in form %}
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold text-muted small">{{ field.label }}</label>
-                        {% render_field field class="form-control" %}
-                        {% if field.help_text %}
-                        <div class="form-text small">{{ field.help_text }}</div>
-                        {% endif %}
-                        {% for error in field.errors %}
-                        <div class="text-danger small mt-1">{{ error }}</div>
+                    <div class="row g-3">
+                        {% for field in form %}
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold opacity-75 small">{{ field.label }}</label>
+                            {% render_field field class="form-control bg-body-secondary border-0" %}
+                            {% if field.help_text %}
+                            <div class="form-text small">{{ field.help_text }}</div>
+                            {% endif %}
+                            {% for error in field.errors %}
+                            <div class="text-danger small mt-1">{{ error }}</div>
+                            {% endfor %}
+                        </div>
                         {% endfor %}
                     </div>
-                    {% endfor %}
-                    <div class="d-grid gap-2 mt-4">
-                        <button type="submit" class="btn btn-primary rounded-pill py-2">Guardar Cambios</button>
-                        <a href="{% url 'customers:customer_list' %}" class="btn btn-light rounded-pill py-2 text-muted">Cancelar</a>
+                    
+                    <div class="d-grid gap-2 mt-5">
+                        <button type="submit" class="btn btn-primary rounded-pill py-3 fw-bold shadow-sm">
+                            <i class="bi bi-check2-circle me-2"></i>Guardar Cliente
+                        </button>
+                        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary rounded-pill py-2">
+                            Cancelar
+                        </a>
                     </div>
                 </form>
             </div>

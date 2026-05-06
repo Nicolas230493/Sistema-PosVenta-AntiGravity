@@ -1,11 +1,29 @@
 {% extends 'base.html' %}
 
+{% block page_title %}Eliminar Producto{% endblock %}
+
 {% block content %}
-<h2>Eliminar Producto</h2>
-<p>¿Estás seguro que deseas eliminar a "{{ product.name }}"?</p>
-<form method="post">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-danger">Sí, eliminar</button>
-    <a href="{% url 'products:product_list' %}" class="btn btn-secondary">Cancelar</a>
-</form>
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm text-center p-4">
+            <div class="card-body">
+                <i class="bi bi-box-fill text-danger display-1 mb-3"></i>
+                <h3 class="fw-bold">¿Eliminar Producto?</h3>
+                <p class="opacity-75">Estás por quitar <strong>{{ product.name }}</strong> del inventario. Esta acción es irreversible.</p>
+                
+                <form method="post" class="mt-4">
+                    {% csrf_token %}
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-danger rounded-pill py-3 fw-bold shadow">
+                            <i class="bi bi-trash me-2"></i>SÍ, ELIMINAR DEL SISTEMA
+                        </button>
+                        <a href="{% url 'products:product_list' %}" class="btn btn-outline-secondary rounded-pill py-2">
+                            Cancelar y Volver
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

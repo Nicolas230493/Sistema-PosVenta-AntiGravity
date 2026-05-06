@@ -8,7 +8,7 @@
     <div class="row g-3 align-items-center">
         <div class="col-lg-4 col-md-12">
             <form method="get" class="input-group">
-                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <span class="input-group-text bg-body-secondary border-end-0 text-body-secondary"><i class="bi bi-search"></i></span>
                 <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Buscar por nombre..." value="{{ request.GET.q|default:'' }}">
             </form>
         </div>
@@ -22,7 +22,7 @@
             <a href="?status=success" class="btn btn-sm btn-outline-success rounded-pill px-3 {% if request.GET.status == 'success' %}active{% endif %}">
                 <i class="bi bi-check-circle me-1"></i> OK
             </a>
-            <a href="{% url 'products:product_list' %}" class="btn btn-sm btn-link text-muted text-decoration-none">Limpiar</a>
+            <a href="{% url 'products:product_list' %}" class="btn btn-sm btn-link text-body-secondary text-decoration-none">Limpiar</a>
         </div>
         <div class="col-lg-3 col-md-4 text-end">
             <div class="btn-group shadow-sm me-2">
@@ -50,11 +50,11 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">Selecciona un archivo Excel (.xlsx) para importar o actualizar productos.</p>
+                <p class="text-body-secondary small">Selecciona un archivo Excel (.xlsx) para importar o actualizar productos.</p>
                 <input type="file" name="excel_file" class="form-control" accept=".xlsx, .xls" required>
             </div>
             <div class="modal-footer border-0">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-success px-4 rounded-pill">Iniciar Importación</button>
             </div>
         </form>
@@ -62,9 +62,9 @@
 </div>
 
 <!-- TABLA DE PRODUCTOS -->
-<div class="table-container shadow-sm">
+<div class="table-container shadow-sm overflow-hidden rounded-4">
     <table class="table table-hover align-middle mb-0">
-        <thead>
+        <thead class="bg-body-tertiary">
             <tr>
                 <th class="ps-4">SKU</th>
                 <th>Producto</th>
@@ -79,16 +79,16 @@
             {% for product in products %}
             <tr>
                 <td class="ps-4">
-                    <span class="badge bg-light text-dark border font-monospace">{{ product.sku|default:"---" }}</span>
+                    <span class="badge bg-body-secondary text-body border font-monospace">{{ product.sku|default:"---" }}</span>
                 </td>
                 <td>
                     <div class="d-flex align-items-center">
-                        <div class="bg-light p-2 rounded-3 me-3">
+                        <div class="bg-primary bg-opacity-10 p-2 rounded-3 me-3">
                             <i class="bi bi-box text-primary fs-5"></i>
                         </div>
                         <div>
-                            <div class="fw-bold text-dark">{{ product.name }}</div>
-                            <small class="text-muted">{{ product.supplier.name|default:"Sin proveedor" }}</small>
+                            <div class="fw-bold">{{ product.name }}</div>
+                            <small class="text-body-secondary">{{ product.supplier.name|default:"Sin proveedor" }}</small>
                         </div>
                     </div>
                 </td>
@@ -110,9 +110,9 @@
                 <td>
                     <div class="d-flex justify-content-between mb-1 small">
                         <span class="fw-medium text-{{ product.stock_status }}">{{ product.stock }} unidades</span>
-                        <span class="text-muted text-xs">Mín: {{ product.min_stock }}</span>
+                        <span class="text-body-secondary text-xs">Mín: {{ product.min_stock }}</span>
                     </div>
-                    <div class="progress progress-sm">
+                    <div class="progress progress-sm" style="height: 6px;">
                         <div class="progress-bar bg-{{ product.stock_status }}" 
                              role="progressbar" 
                              style="width: {{ product.stock_percentage }}%"
@@ -121,8 +121,8 @@
                     </div>
                 </td>
                 <td>
-                    <div class="fw-bold text-dark">${{ product.price }}</div>
-                    <small class="text-muted text-xs">Costo: ${{ product.cost_price }}</small>
+                    <div class="fw-bold">${{ product.price }}</div>
+                    <small class="text-body-secondary text-xs">Costo: ${{ product.cost_price }}</small>
                 </td>
                 <td>
                     {% if product.expiry_date %}
@@ -131,15 +131,15 @@
                             {{ product.expiry_date|date:"d M Y" }}
                         </div>
                     {% else %}
-                        <span class="text-muted small">Sin fecha</span>
+                        <span class="text-body-secondary small">Sin fecha</span>
                     {% endif %}
                 </td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
-                        <a href="{% url 'products:product_update' pk=product.pk %}" class="btn btn-white btn-sm border" title="Editar">
+                        <a href="{% url 'products:product_update' pk=product.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>
-                        <a href="{% url 'products:product_delete' pk=product.pk %}" class="btn btn-white btn-sm border" title="Eliminar">
+                        <a href="{% url 'products:product_delete' pk=product.pk %}" class="btn btn-outline-secondary btn-sm border" title="Eliminar">
                             <i class="bi bi-trash text-danger"></i>
                         </a>
                     </div>
@@ -147,9 +147,9 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6" class="text-center py-5">
-                    <i class="bi bi-search fs-1 text-muted mb-3 d-block"></i>
-                    <p class="text-muted">No se encontraron productos que coincidan con tu búsqueda.</p>
+                <td colspan="7" class="text-center py-5">
+                    <i class="bi bi-search fs-1 text-body-secondary mb-3 d-block"></i>
+                    <p class="text-body-secondary">No se encontraron productos que coincidan con tu búsqueda.</p>
                 </td>
             </tr>
             {% endfor %}

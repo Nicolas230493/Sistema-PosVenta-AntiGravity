@@ -9,63 +9,62 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
                 <div class="d-flex align-items-center mb-4 text-primary">
-                    <i class="bi bi-box-arrow-in-down fs-2 me-3"></i>
-                    <div>
-                        <h4 class="fw-bold mb-0">Entrada de Mercadería</h4>
-                        <p class="text-muted small mb-0">Actualiza stock y precios de compra/venta simultáneamente.</p>
-                    </div>
+                <i class="bi bi-box-arrow-in-down fs-2 me-3"></i>
+                <div>
+                    <h4 class="fw-bold mb-0">Entrada de Mercadería</h4>
+                    <p class="opacity-75 small mb-0">Actualiza stock y precios de compra/venta simultáneamente.</p>
+                </div>
                 </div>
 
                 <form method="post">
-                    {% csrf_token %}
-                    
-                    <div class="mb-4">
-                        <label class="form-label fw-semibold">Seleccionar Producto</label>
-                        {% render_field form.product class="form-select select2" %}
-                        {% for error in form.product.errors %}
+                {% csrf_token %}
+
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">Seleccionar Producto</label>
+                    {% render_field form.product class="form-select bg-body-secondary border-0" %}
+                    {% for error in form.product.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-12">
+                        <label class="form-label fw-semibold">Referencia (Factura / Remito)</label>
+                        {% render_field form.reference class="form-control bg-body-secondary border-0" placeholder="Ej: Factura A-0001" %}
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold text-primary">Cantidad</label>
+                        {% render_field form.quantity class="form-control form-control-lg border-primary bg-body-secondary" placeholder="0" %}
+                        {% for error in form.quantity.errors %}
                             <div class="text-danger small">{{ error }}</div>
                         {% endfor %}
                     </div>
-
-                    <div class="row g-3 mb-4">
-                        <div class="col-md-12">
-                            <label class="form-label fw-semibold">Referencia (Factura / Remito)</label>
-                            {% render_field form.reference class="form-control" placeholder="Ej: Factura A-0001" %}
-                        </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold text-danger">Precio Costo ($)</label>
+                        {% render_field form.cost_price class="form-control form-control-lg border-danger bg-body-secondary" placeholder="0.00" %}
+                        {% for error in form.cost_price.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
                     </div>
-
-                    <div class="row g-3 mb-4">
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold text-primary">Cantidad</label>
-                            {% render_field form.quantity class="form-control form-control-lg border-primary" placeholder="0" %}
-                            {% for error in form.quantity.errors %}
-                                <div class="text-danger small">{{ error }}</div>
-                            {% endfor %}
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold text-danger">Precio Costo ($)</label>
-                            {% render_field form.cost_price class="form-control form-control-lg border-danger" placeholder="0.00" %}
-                            {% for error in form.cost_price.errors %}
-                                <div class="text-danger small">{{ error }}</div>
-                            {% endfor %}
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold text-success">Precio Venta ($)</label>
-                            {% render_field form.sale_price class="form-control form-control-lg border-success" placeholder="0.00" %}
-                            {% for error in form.sale_price.errors %}
-                                <div class="text-danger small">{{ error }}</div>
-                            {% endfor %}
-                        </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold text-success">Precio Venta ($)</label>
+                        {% render_field form.sale_price class="form-control form-control-lg border-success bg-body-secondary" placeholder="0.00" %}
+                        {% for error in form.sale_price.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
                     </div>
+                </div>
 
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary rounded-pill py-3 fw-bold">
-                            <i class="bi bi-check2-circle me-2"></i>CONFIRMAR INGRESO
-                        </button>
-                        <a href="{% url 'products:inventory_history' %}" class="btn btn-light rounded-pill py-2 text-muted">Cancelar</a>
-                    </div>
-                </form>
-            </div>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary rounded-pill py-3 fw-bold shadow">
+                        <i class="bi bi-check2-circle me-2"></i>CONFIRMAR INGRESO
+                    </button>
+                    <a href="{% url 'products:inventory_history' %}" class="btn btn-outline-secondary rounded-pill py-2">Cancelar</a>
+                </div>
+                </form>            </div>
         </div>
     </div>
 </div>
