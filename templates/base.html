@@ -204,6 +204,9 @@
                 <a class="nav-link {% if 'suppliers' in request.path %}active{% endif %}" href="{% url 'suppliers:supplier_list' %}">
                     <i class="bi bi-truck"></i> Proveedores
                 </a>
+                <a class="nav-link {% if 'purchases' in request.path %}active{% endif %}" href="{% url 'products:purchase_list' %}">
+                    <i class="bi bi-bag-plus"></i> Compras
+                </a>
                 <a class="nav-link {% if 'finance' in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
                     <i class="bi bi-cash-coin"></i> Caja
                 </a>
@@ -307,6 +310,17 @@
 
                 {% block content %}{% endblock %}
             </main>
+
+            <footer class="footer mt-auto py-3 bg-body-tertiary border-top">
+                <div class="container-fluid px-4">
+                    <div class="d-flex justify-content-between align-items-center small opacity-75">
+                        <span>&copy; 2026 Impulso Digital Sgo Todos los Derechos Reservados</span>
+                        <div class="d-flex gap-3">
+                            <span class="fw-bold text-primary">Impulso Smart v1.0</span>
+                        </div>
+                    </div>
+                </div>
+            </footer>
         </div>
     </div>
 

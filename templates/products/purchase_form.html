@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4">Datos de la Factura</h5>
+                <form id="purchase-form" method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Proveedor</label>
+                        <select name="supplier_id" class="form-select border-0 bg-body-secondary" required>
+                            <option value="">Seleccionar...</option>
+                            {% for supplier in suppliers %}
+                                <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label small fw-bold">Número de Factura</label>
+                        <input type="text" name="invoice_number" class="form-control border-0 bg-body-secondary" placeholder="Ej: 0001-00001234">
+                    </div>
+                    <input type="hidden" name="items_data" id="items-data">
+                    <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow">
+                        <i class="bi bi-check-lg me-2"></i>GUARDAR COMPRA
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4">Productos en la Compra</h5>
+                
+                <div class="row g-2 mb-4">
+                    <div class="col-md-6">
+                        <select id="product-selector" class="form-select border-0 bg-body-secondary">
+                            <option value="">Seleccionar Producto...</option>
+                            {% for product in products %}
+                                <option value="{{ product.id }}" data-name="{{ product.name }}" data-cost="{{ product.cost_price }}">
+                                    {{ product.name }} (Actual: ${{ product.cost_price }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" id="qty-input" class="form-control border-0 bg-body-secondary" placeholder="Cant.">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" step="0.01" id="cost-input" class="form-control border-0 bg-body-secondary" placeholder="Costo">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-primary w-100" id="add-item-btn">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Producto</th>
+                                <th>Cantidad</th>
+                                <th>Costo Unit.</th>
+                                <th>Subtotal</th>
+                                <th class="text-end"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="purchase-items">
+                            <!-- Items dinámicos -->
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold fs-5">
+                                <td colspan="3" class="text-end">TOTAL COMPRA:</td>
+                                <td colspan="2">$<span id="purchase-total">0.00</span></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let items = [];
+
+    document.getElementById('add-item-btn').addEventListener('click', function() {
+        const selector = document.getElementById('product-selector');
+        const selectedOption = selector.options[selector.selectedIndex];
+        const qty = parseInt(document.getElementById('qty-input').value);
+        const cost = parseFloat(document.getElementById('cost-input').value);
+
+        if (!selectedOption.value || isNaN(qty) || isNaN(cost)) {
+            alert("Complete todos los campos del producto");
+            return;
+        }
+
+        const product_id = selectedOption.value;
+        const name = selectedOption.dataset.name;
+
+        items.push({ product_id, name, qty, cost });
+        updateItemsTable();
+        
+        // Limpiar
+        selector.value = '';
+        document.getElementById('qty-input').value = '';
+        document.getElementById('cost-input').value = '';
+    });
+
+    function updateItemsTable() {
+        const tbody = document.getElementById('purchase-items');
+        tbody.innerHTML = '';
+        let total = 0;
+
+        items.forEach((item, index) => {
+            const subtotal = item.qty * item.cost;
+            total += subtotal;
+            tbody.innerHTML += `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>${item.qty}</td>
+                    <td>$${item.cost.toFixed(2)}</td>
+                    <td>$${subtotal.toFixed(2)}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-danger" onclick="removeItem(${index})"><i class="bi bi-x"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById('purchase-total').innerText = total.toFixed(2);
+        document.getElementById('items-data').value = JSON.stringify(items);
+    }
+
+    window.removeItem = function(index) {
+        items.splice(index, 1);
+        updateItemsTable();
+    };
+
+    // Al seleccionar producto, sugerir costo actual
+    document.getElementById('product-selector').addEventListener('change', function() {
+        const selected = this.options[this.selectedIndex];
+        if (selected.value) {
+            document.getElementById('cost-input').value = selected.dataset.cost;
+        }
+    });
+</script>
+{% endblock %}

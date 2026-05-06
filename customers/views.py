@@ -2,8 +2,44 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q
-from .models import Customer
+from django.db import transaction
+from decimal import Decimal
+from .models import Customer, Payment
 from .forms import CustomerForm
+
+@login_required
+def customer_payment(request, pk):
+    customer = get_object_or_404(Customer, pk=pk)
+    if request.method == 'POST':
+        amount = request.POST.get('amount')
+        method = request.POST.get('payment_method')
+        notes = request.POST.get('notes')
+        
+        try:
+            amount = Decimal(amount)
+            if amount <= 0:
+                raise Exception("El monto debe ser mayor a cero.")
+            
+            with transaction.atomic():
+                # Crear el registro de pago
+                Payment.objects.create(
+                    customer=customer,
+                    amount=amount,
+                    payment_method=method,
+                    notes=notes,
+                    user=request.user
+                )
+                
+                # Descontar del saldo del cliente
+                customer.balance -= amount
+                customer.save()
+                
+                messages.success(request, f"Pago de ${amount} registrado correctamente para {customer.full_name}.")
+                return redirect('customers:customer_list')
+        except Exception as e:
+            messages.error(request, f"Error al registrar pago: {str(e)}")
+            
+    return render(request, 'customers/customer_payment.html', {'customer': customer})
 
 @login_required
 def customer_list(request):

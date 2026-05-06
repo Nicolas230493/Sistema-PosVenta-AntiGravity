@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Registrar Pago | {{ customer.full_name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-lg rounded-4">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <div class="bg-success d-inline-block p-3 rounded-circle shadow-sm mb-3">
+                        <i class="bi bi-cash-stack text-white fs-2"></i>
+                    </div>
+                    <h2 class="fw-bold">Registrar Pago</h2>
+                    <p class="text-muted">Cliente: <strong>{{ customer.full_name }}</strong></p>
+                    <div class="badge bg-warning text-dark p-2 rounded-pill">
+                        Saldo Actual: ${{ customer.balance }}
+                    </div>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Monto a Pagar ($)</label>
+                        <input type="number" step="0.01" name="amount" class="form-control form-control-lg bg-light border-0" required max="{{ customer.balance }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Método de Pago</label>
+                        <select name="payment_method" class="form-select bg-light border-0">
+                            <option value="CASH">💵 Efectivo</option>
+                            <option value="DEBIT">💳 Tarjeta de Débito</option>
+                            <option value="CREDIT">💳 Tarjeta de Crédito</option>
+                            <option value="TRANS">📲 Transferencia / QR</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Notas (Opcional)</label>
+                        <input type="text" name="notes" class="form-control bg-light border-0" placeholder="Ej: Pago parcial, Recibo #123">
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success btn-lg rounded-pill py-3 fw-bold shadow">
+                            CONFIRMAR PAGO
+                        </button>
+                        <a href="{% url 'customers:customer_list' %}" class="btn btn-link text-muted">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

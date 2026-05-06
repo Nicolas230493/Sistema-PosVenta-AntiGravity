@@ -7,6 +7,9 @@ class Sale(models.Model):
     PAYMENT_METHODS = (
         ('CASH', 'Efectivo'),
         ('CC', 'Cuenta Corriente'),
+        ('DEBIT', 'Tarjeta de Débito'),
+        ('CREDIT', 'Tarjeta de Crédito'),
+        ('TRANS', 'Transferencia'),
     )
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)

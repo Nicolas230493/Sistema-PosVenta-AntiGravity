@@ -102,6 +102,7 @@ class StockLoss(models.Model):
         verbose_name_plural = "Bajas de Stock"
 
 class PriceLog(models.Model):
+    # ... (existente)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_logs')
     old_price = models.DecimalField(max_digits=10, decimal_places=2)
     new_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -112,3 +113,29 @@ class PriceLog(models.Model):
         ordering = ['-date']
         verbose_name = "Log de Precios"
         verbose_name_plural = "Logs de Precios"
+
+class Purchase(models.Model):
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchases', verbose_name="Proveedor")
+    invoice_number = models.CharField(max_length=50, verbose_name="Número de Factura", blank=True, null=True)
+    date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total Compra", default=0)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Registrado por")
+
+    def __str__(self):
+        return f"Compra #{self.id} - {self.supplier.name}"
+
+    class Meta:
+        verbose_name = "Compra"
+        verbose_name_plural = "Compras"
+        ordering = ['-date']
+
+class PurchaseDetail(models.Model):
+    purchase = models.ForeignKey(Purchase, related_name='details', on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Producto")
+    quantity = models.IntegerField(verbose_name="Cantidad")
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio de Costo")
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Subtotal")
+
+    def save(self, *args, **kwargs):
+        self.subtotal = self.quantity * self.cost_price
+        super().save(*args, **kwargs)

@@ -1,8 +1,56 @@
 {% extends 'base.html' %}
 
-{% block page_title %}Control de Caja{% endblock %}
+{% block page_title %}Control de Caja y Rentabilidad{% endblock %}
 
 {% block content %}
+<!-- Estadísticas de Rentabilidad (Utilidad Bruta) -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4 text-center">
+                <div class="bg-primary-subtle p-2 rounded-3 d-inline-block mb-2">
+                    <i class="bi bi-graph-up text-primary fs-4"></i>
+                </div>
+                <p class="text-muted small fw-bold text-uppercase mb-1">Ventas Hoy</p>
+                <h3 class="fw-bold mb-0">${{ profit_stats.revenue|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4 text-center">
+                <div class="bg-warning-subtle p-2 rounded-3 d-inline-block mb-2">
+                    <i class="bi bi-tag text-warning fs-4"></i>
+                </div>
+                <p class="text-muted small fw-bold text-uppercase mb-1">Costo Mercadería</p>
+                <h3 class="fw-bold mb-0">${{ profit_stats.cost|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4 text-center">
+                <div class="bg-success-subtle p-2 rounded-3 d-inline-block mb-2">
+                    <i class="bi bi-cash-stack text-success fs-4"></i>
+                </div>
+                <p class="text-muted small fw-bold text-uppercase mb-1">Utilidad Bruta</p>
+                <h3 class="fw-bold mb-0">${{ profit_stats.profit|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4 text-center">
+                <div class="bg-info-subtle p-2 rounded-3 d-inline-block mb-2">
+                    <i class="bi bi-percent text-info fs-4"></i>
+                </div>
+                <p class="text-muted small fw-bold text-uppercase mb-1">Margen Bruto</p>
+                <h3 class="fw-bold mb-0">{{ profit_stats.margin|floatformat:1 }}%</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <!-- Estado de Caja -->
     <div class="col-md-4">
@@ -31,24 +79,38 @@
                         <span class="fw-bold">${{ session.total_expenses }}</span>
                     </div>
                     <hr>
-                    <div class="d-flex justify-content-between fs-5 fw-bold">
+                    <div class="d-flex justify-content-between fs-5 fw-bold mb-3">
                         <span>Esperado en Caja:</span>
                         <span class="text-primary">${{ session.expected_final_amount }}</span>
                     </div>
+
+                    {% if other_payments %}
+                    <div class="bg-light p-3 rounded-3 mt-3">
+                        <h6 class="small fw-bold text-uppercase opacity-50 mb-2">Otros Medios (Tarjetas/QR)</h6>
+                        {% for pay in other_payments %}
+                        <div class="d-flex justify-content-between mb-1 small">
+                            <span>{{ pay.payment_method }}:</span>
+                            <span class="fw-bold">${{ pay.total }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- Botón Cierre -->
-            <button class="btn btn-danger w-100 rounded-pill py-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#closeCashModal">
+            <button class="btn btn-danger w-100 rounded-pill py-3 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#closeCashModal">
                 <i class="bi bi-lock me-2"></i>CERRAR CAJA (ARQUEO)
             </button>
         {% else %}
-            <div class="card border-0 shadow-sm text-center p-5">
+            <div class="card border-0 shadow-sm text-center p-5 rounded-4">
                 <div class="card-body">
-                    <i class="bi bi-lock text-muted display-4"></i>
+                    <div class="bg-light d-inline-block p-4 rounded-circle mb-3">
+                        <i class="bi bi-lock text-muted display-4"></i>
+                    </div>
                     <h4 class="fw-bold mt-3">Caja Cerrada</h4>
-                    <p class="text-muted small">Debes abrir una sesión de caja para registrar ventas en efectivo.</p>
-                    <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#openCashModal">
+                    <p class="text-muted mb-4">Debes abrir una sesión de caja para registrar ventas en efectivo y controlar tu turno.</p>
+                    <button class="btn btn-primary btn-lg rounded-pill px-5 shadow" data-bs-toggle="modal" data-bs-target="#openCashModal">
                         Abrir Nueva Caja
                     </button>
                 </div>
@@ -59,19 +121,19 @@
     <!-- Gestión de Egresos -->
     <div class="col-md-8">
         {% if session %}
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-transparent border-0 py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="fw-bold mb-0">Egresos de Caja (Gastos)</h5>
-                    <button class="btn btn-sm btn-outline-danger rounded-pill" data-bs-toggle="modal" data-bs-target="#expenseModal">
-                        <i class="bi bi-plus-lg me-1"></i>Registrar Gasto
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-transparent border-0 py-4 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">Egresos y Gastos de Turno</h5>
+                    <button class="btn btn-sm btn-danger rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#expenseModal">
+                        <i class="bi bi-plus-lg me-1"></i>Nuevo Gasto
                     </button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-body-tertiary">
+                        <thead class="bg-light">
                             <tr>
                                 <th class="ps-4">Hora</th>
-                                <th>Concepto</th>
+                                <th>Concepto / Descripción</th>
                                 <th class="text-end pe-4">Monto</th>
                             </tr>
                         </thead>
@@ -79,16 +141,25 @@
                             {% for expense in session.expenses.all %}
                                 <tr>
                                     <td class="ps-4 small opacity-75">{{ expense.date|date:"H:i" }}</td>
-                                    <td>{{ expense.description }}</td>
+                                    <td class="fw-medium">{{ expense.description }}</td>
                                     <td class="text-end pe-4 fw-bold text-danger">-${{ expense.amount }}</td>
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="3" class="text-center py-4 opacity-75 small">No hay egresos registrados</td>
+                                    <td colspan="3" class="text-center py-5 opacity-50">
+                                        <i class="bi bi-receipt fs-2 d-block mb-2"></i>
+                                        No hay egresos registrados en este turno
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        {% else %}
+            <div class="card border-0 shadow-sm rounded-4 opacity-50">
+                <div class="card-body p-5 text-center">
+                    <p class="mb-0">Abre la caja para ver la gestión de gastos.</p>
                 </div>
             </div>
         {% endif %}
@@ -99,18 +170,21 @@
 
 <!-- Abrir Caja -->
 <div class="modal fade" id="openCashModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <form action="{% url 'finance:open_cash' %}" method="post" class="modal-content border-0 shadow">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form action="{% url 'finance:open_cash' %}" method="post" class="modal-content border-0 shadow-lg rounded-4">
             {% csrf_token %}
             <div class="modal-header border-0 pb-0">
                 <h5 class="modal-title fw-bold">Apertura de Caja</h5>
             </div>
-            <div class="modal-body text-center">
-                <p class="opacity-75 small">Indica el monto de efectivo inicial (cambio).</p>
-                <input type="number" name="amount" class="form-control form-control-lg text-center fw-bold" placeholder="0.00" required step="0.01">
+            <div class="modal-body text-center p-4">
+                <p class="opacity-75 small mb-4">Indica el monto de efectivo inicial (cambio para el turno).</p>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light fs-4">$</span>
+                    <input type="number" name="amount" class="form-control form-control-lg border-0 bg-light text-center fw-bold" placeholder="0.00" required step="0.01">
+                </div>
             </div>
-            <div class="modal-footer border-0">
-                <button type="submit" class="btn btn-primary w-100 rounded-pill">Iniciar Sesión</button>
+            <div class="modal-footer border-0 p-4 pt-0">
+                <button type="submit" class="btn btn-primary w-100 rounded-pill py-3 fw-bold">INICIAR TURNO</button>
             </div>
         </form>
     </div>
@@ -118,25 +192,28 @@
 
 <!-- Registrar Egreso -->
 <div class="modal fade" id="expenseModal" tabindex="-1">
-    <div class="modal-dialog">
-        <form action="{% url 'finance:add_expense' %}" method="post" class="modal-content border-0 shadow">
+    <div class="modal-dialog modal-dialog-centered">
+        <form action="{% url 'finance:add_expense' %}" method="post" class="modal-content border-0 shadow-lg rounded-4">
             {% csrf_token %}
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold">Nuevo Egreso de Caja</h5>
+            <div class="modal-header border-0 px-4 pt-4">
+                <h5 class="modal-title fw-bold">Registrar Salida de Dinero</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body p-4">
                 <div class="mb-3">
-                    <label class="form-label">Monto</label>
-                    <input type="number" name="amount" class="form-control" required step="0.01">
+                    <label class="form-label fw-bold small">Monto del Gasto</label>
+                    <div class="input-group">
+                        <span class="input-group-text border-0 bg-light">$</span>
+                        <input type="number" name="amount" class="form-control border-0 bg-light fw-bold" required step="0.01">
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Descripción / Concepto</label>
-                    <input type="text" name="description" class="form-control" placeholder="Ej: Pago a proveedor, limpieza, etc." required>
+                <div class="mb-0">
+                    <label class="form-label fw-bold small">Concepto / Descripción</label>
+                    <input type="text" name="description" class="form-control border-0 bg-light" placeholder="Ej: Pago de luz, Art. limpieza, etc." required>
                 </div>
             </div>
-            <div class="modal-footer border-0">
-                <button type="submit" class="btn btn-danger w-100 rounded-pill">Confirmar Salida de Dinero</button>
+            <div class="modal-footer border-0 p-4 pt-0">
+                <button type="submit" class="btn btn-danger w-100 rounded-pill py-3 fw-bold">CONFIRMAR EGRESO</button>
             </div>
         </form>
     </div>
@@ -144,29 +221,35 @@
 
 <!-- Cerrar Caja -->
 <div class="modal fade" id="closeCashModal" tabindex="-1">
-    <div class="modal-dialog">
-        <form action="{% url 'finance:close_cash' %}" method="post" class="modal-content border-0 shadow">
+    <div class="modal-dialog modal-dialog-centered">
+        <form action="{% url 'finance:close_cash' %}" method="post" class="modal-content border-0 shadow-lg rounded-4">
             {% csrf_token %}
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold">Arqueo de Caja (Cierre)</h5>
+            <div class="modal-header border-0 px-4 pt-4">
+                <h5 class="modal-title fw-bold">Cierre de Turno y Arqueo</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div class="alert alert-info small">
-                    El monto esperado es: <strong>${{ session.expected_final_amount }}</strong>
+            <div class="modal-body p-4">
+                <div class="alert alert-primary border-0 rounded-3 mb-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Monto esperado en caja:</span>
+                        <strong class="fs-5">${{ session.expected_final_amount }}</strong>
+                    </div>
                 </div>
-                <div class="mb-3 text-center">
-                    <label class="form-label fw-bold">Efectivo Real en Caja</label>
-                    <input type="number" name="real_amount" class="form-control form-control-lg text-center border-primary fw-bold" required step="0.01">
-                    <div class="form-text">Cuenta el dinero físico que tienes ahora.</div>
+                <div class="mb-4 text-center">
+                    <label class="form-label fw-bold text-uppercase small opacity-75">Efectivo Real contado en caja</label>
+                    <div class="input-group">
+                        <span class="input-group-text border-0 bg-light fs-4">$</span>
+                        <input type="number" name="real_amount" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" required step="0.01">
+                    </div>
+                    <div class="form-text mt-2">Cuenta todo el efectivo que tienes físicamente para cerrar.</div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Notas / Observaciones</label>
-                    <textarea name="notes" class="form-control" rows="2"></textarea>
+                <div class="mb-0">
+                    <label class="form-label fw-bold small">Observaciones del Turno</label>
+                    <textarea name="notes" class="form-control border-0 bg-light" rows="2" placeholder="Opcional: novedades, diferencias, etc."></textarea>
                 </div>
             </div>
-            <div class="modal-footer border-0">
-                <button type="submit" class="btn btn-danger w-100 rounded-pill py-2">Finalizar y Guardar Arqueo</button>
+            <div class="modal-footer border-0 p-4 pt-0">
+                <button type="submit" class="btn btn-danger w-100 rounded-pill py-3 fw-bold">FINALIZAR ARQUEO Y CERRAR</button>
             </div>
         </form>
     </div>

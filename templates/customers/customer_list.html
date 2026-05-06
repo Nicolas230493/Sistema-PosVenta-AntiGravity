@@ -25,8 +25,8 @@
             <tr>
                 <th class="ps-4">Nombre Completo</th>
                 <th>DNI / CUIT</th>
-                <th>Teléfono</th>
-                <th>Email</th>
+                <th>Saldo</th>
+                <th>Puntos</th>
                 <th class="text-end pe-4">Acciones</th>
             </tr>
         </thead>
@@ -40,10 +40,23 @@
                     {% endif %}
                 </td>
                 <td>{{ customer.dni_cuit|default:"---" }}</td>
-                <td>{{ customer.phone|default:"---" }}</td>
-                <td>{{ customer.email|default:"---" }}</td>
+                <td>
+                    {% if customer.balance > 0 %}
+                        <span class="text-danger fw-bold">${{ customer.balance }}</span>
+                    {% else %}
+                        <span class="text-success">$0.00</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge bg-primary-subtle text-primary rounded-pill">{{ customer.points }} pts</span>
+                </td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
+                        {% if customer.balance > 0 %}
+                        <a href="{% url 'customers:customer_payment' pk=customer.pk %}" class="btn btn-outline-success btn-sm border" title="Registrar Pago">
+                            <i class="bi bi-cash"></i>
+                        </a>
+                        {% endif %}
                         <a href="{% url 'customers:customer_update' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>
