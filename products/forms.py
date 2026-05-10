@@ -1,10 +1,18 @@
 from django import forms
-from .models import Product, InventoryMovement
+from .models import Product, InventoryMovement, Category
+
+class CategoryForm(forms.ModelForm):
+    class Meta:
+        model = Category
+        fields = ['name', 'description']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
 
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ['sku', 'name', 'description', 'price', 'cost_price', 'stock', 'min_stock', 'expiry_date', 'supplier']
+        fields = ['sku', 'name', 'category', 'description', 'price', 'cost_price', 'tax_rate', 'stock', 'min_stock', 'expiry_date', 'supplier']
         widgets = {
             'expiry_date': forms.DateInput(attrs={'type': 'date'}),
         }

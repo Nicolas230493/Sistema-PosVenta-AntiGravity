@@ -26,11 +26,5 @@ def handle_sale_effects(sender, instance, created, **kwargs):
             instance.customer.balance += instance.total_amount
             instance.customer.save()
 
-@receiver(post_save, sender=SaleDetail)
-def update_stock_on_sale(sender, instance, created, **kwargs):
-    if created:
-        # Reducir stock al vender
-        product = instance.product
-        if product:
-            product.stock -= instance.quantity
-            product.save()
+# Eliminamos update_stock_on_sale porque pos_view ya descuenta stock y crea InventoryMovement.
+# Esto evita que se descuente el doble.

@@ -7,20 +7,29 @@
 {% endif %}
 <div class="row">
     <div class="col-md-8">
-        <h2>Productos</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="mb-0">Productos</h2>
+            <div class="input-group w-50 shadow-sm">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-upc-scan"></i></span>
+                <input type="text" id="sku-scanner" class="form-control border-0" placeholder="Escanear Código (SKU)..." autofocus>
+            </div>
+        </div>
         <div class="mb-3">
-            <input type="text" id="search" class="form-control" placeholder="Buscar producto...">
+            <input type="text" id="search" class="form-control" placeholder="Buscar por nombre...">
         </div>
         <div class="row" id="product-list">
             {% for product in products %}
-            <div class="col-md-4 mb-3 product-item" data-name="{{ product.name }}">
+            <div class="col-md-4 mb-3 product-item" data-name="{{ product.name }}" data-sku="{{ product.sku }}">
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <h5 class="card-title fw-bold">{{ product.name }}</h5>
                         <p class="card-text fs-5 fw-bold text-primary">${{ product.price }}</p>
-                        <p class="card-text opacity-75 small">Stock: {{ product.stock }}</p>
-                        <button class="btn btn-primary btn-sm w-100 rounded-pill add-to-cart" data-id="{{ product.id }}"
-                            data-name="{{ product.name }}" data-price="{{ product.price }}">
+                        <p class="card-text opacity-75 small">Stock: {{ product.stock }} | SKU: {{ product.sku }}</p>
+                        <button class="btn btn-primary btn-sm w-100 rounded-pill add-to-cart" 
+                            data-id="{{ product.id }}"
+                            data-name="{{ product.name }}" 
+                            data-price="{{ product.price }}"
+                            data-sku="{{ product.sku }}">
                             <i class="bi bi-plus-lg me-1"></i>Agregar
                         </button>
                     </div>
@@ -69,6 +78,21 @@
         <ul class="list-group mb-3 shadow-sm border-0" id="cart-items">
             <!-- Items go here -->
         </ul>
+
+        <!-- Descuentos y Recargos -->
+        <div class="card border-0 shadow-sm p-3 mb-3 bg-light">
+            <div class="row g-2">
+                <div class="col-6">
+                    <label class="small fw-bold opacity-75">Descuento ($)</label>
+                    <input type="number" name="discount_amount" id="discount-input" form="pos-form" class="form-control form-control-sm border-0 shadow-sm" value="0" step="0.01">
+                </div>
+                <div class="col-6">
+                    <label class="small fw-bold opacity-75">Recargo ($)</label>
+                    <input type="number" name="surcharge_amount" id="surcharge-input" form="pos-form" class="form-control form-control-sm border-0 shadow-sm" value="0" step="0.01">
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm p-3 mb-3 bg-primary text-white">
             <h3 class="mb-0 d-flex justify-content-between">
                 <span>Total:</span>
@@ -137,6 +161,27 @@
 
     let cart = [];
 
+    // Lógica de Escáner SKU
+    const skuScanner = document.getElementById('sku-scanner');
+    skuScanner.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            const sku = this.value.trim();
+            if (sku) {
+                const productBtn = document.querySelector(`.add-to-cart[data-sku="${sku}"]`);
+                if (productBtn) {
+                    productBtn.click();
+                    this.value = '';
+                    // Feedback visual
+                    this.classList.add('is-valid');
+                    setTimeout(() => this.classList.remove('is-valid'), 500);
+                } else {
+                    alert('Producto no encontrado con el SKU: ' + sku);
+                    this.value = '';
+                }
+            }
+        }
+    });
+
     document.querySelectorAll('.add-to-cart').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
@@ -156,25 +201,35 @@
     function updateCart() {
         const list = document.getElementById('cart-items');
         list.innerHTML = '';
-        let total = 0;
+        let subtotal_items = 0;
+        
         cart.forEach((item, index) => {
-            total += item.price * item.qty;
+            subtotal_items += item.price * item.qty;
             list.innerHTML += `
                 <li class="list-group-item d-flex justify-content-between lh-sm">
                     <div>
                         <h6 class="my-0">${item.name}</h6>
-                        <small class="text-muted">x${item.qty}</small>
+                        <small class="text-muted">x${item.qty} a $${item.price.toFixed(2)}</small>
                     </div>
-                    <div>
-                        <span class="text-muted">$${(item.price * item.qty).toFixed(2)}</span>
-                        <button class="btn btn-sm btn-danger ms-2" onclick="remove(${index})">X</button>
+                    <div class="text-end">
+                        <span class="text-muted d-block">$${(item.price * item.qty).toFixed(2)}</span>
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="remove(${index})">Eliminar</button>
                     </div>
                 </li>
             `;
         });
+
+        const discount = parseFloat(document.getElementById('discount-input').value || 0);
+        const surcharge = parseFloat(document.getElementById('surcharge-input').value || 0);
+        const total = subtotal_items - discount + surcharge;
+
         document.getElementById('total-amount').innerText = total.toFixed(2);
         document.getElementById('cart-data').value = JSON.stringify(cart);
     }
+
+    // Escuchar cambios en descuento y recargo
+    document.getElementById('discount-input').addEventListener('input', updateCart);
+    document.getElementById('surcharge-input').addEventListener('input', updateCart);
 
     window.remove = function (index) {
         cart.splice(index, 1);

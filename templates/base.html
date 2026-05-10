@@ -9,6 +9,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <style>
         :root {
@@ -51,32 +52,56 @@
         /* ESTRUCTURA PRINCIPAL REPARADA */
         #wrapper {
             display: flex;
-            width: 100vw;
+            width: 100%;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         /* SIDEBAR ROBUSTA */
         #sidebar-wrapper {
             width: var(--sidebar-width);
-            flex-shrink: 0;
+            min-width: var(--sidebar-width);
             background: var(--sidebar-bg);
             color: #fff;
             transition: var(--transition);
             z-index: 1000;
             display: flex;
             flex-direction: column;
+            height: 100vh;
+            position: sticky;
+            top: 0;
         }
 
         /* CONTENIDO PRINCIPAL */
         #page-content-wrapper {
             flex-grow: 1;
-            min-width: 0; /* Evita que el contenido rompa el flexbox */
+            width: 100%;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             background-color: var(--bg-body);
+            transition: var(--transition);
         }
 
-        /* Navbar Superior */
+        /* RESPONSIVIDAD REPARADA */
+        @media (max-width: 992px) {
+            #sidebar-wrapper {
+                position: fixed;
+                left: calc(-1 * var(--sidebar-width));
+                height: 100vh;
+            }
+            #wrapper.toggled #sidebar-wrapper {
+                left: 0;
+            }
+            #wrapper.toggled #page-content-wrapper {
+                margin-left: 0;
+            }
+        }
+        
+        #wrapper.toggled:not(.mobile-toggled) #sidebar-wrapper {
+            margin-left: calc(-1 * var(--sidebar-width));
+        }
+
         .navbar-main {
             height: var(--topbar-height);
             background: var(--bs-body-bg);
@@ -188,15 +213,23 @@
             </div>
             
             <nav class="sidebar-nav">
-                <!-- Enlaces Principales -->
+                <!-- Enlaces Principales (Todos) -->
                 <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
                     <i class="bi bi-grid-1x2"></i> Dashboard
                 </a>
-                <a class="nav-link {% if 'pos' in request.path %}active{% endif %}" href="{% url 'sales:pos' %}">
+                <a class="nav-link {% if 'pos' in request.path and request.resolver_match.url_name == 'pos' %}active{% endif %}" href="{% url 'sales:pos' %}">
                     <i class="bi bi-cart3"></i> Punto de Venta
                 </a>
-                <a class="nav-link {% if 'products' in request.path %}active{% endif %}" href="{% url 'products:product_list' %}">
+                <a class="nav-link {% if request.resolver_match.url_name == 'sale_list' %}active{% endif %}" href="{% url 'sales:sale_list' %}">
+                    <i class="bi bi-receipt"></i> Historial de Ventas
+                </a>
+                
+                {% if user.is_superuser or user.groups.all.0.name == 'Encargados' or user.groups.all.0.name == 'Administradores' %}
+                <a class="nav-link {% if 'products' in request.path and 'category' not in request.path %}active{% endif %}" href="{% url 'products:product_list' %}">
                     <i class="bi bi-archive"></i> Inventario
+                </a>
+                <a class="nav-link {% if 'categories' in request.path %}active{% endif %}" href="{% url 'products:category_list' %}">
+                    <i class="bi bi-tags"></i> Categorías
                 </a>
                 <a class="nav-link {% if 'customers' in request.path %}active{% endif %}" href="{% url 'customers:customer_list' %}">
                     <i class="bi bi-people"></i> Clientes
@@ -207,12 +240,14 @@
                 <a class="nav-link {% if 'purchases' in request.path %}active{% endif %}" href="{% url 'products:purchase_list' %}">
                     <i class="bi bi-bag-plus"></i> Compras
                 </a>
+                {% endif %}
+
                 <a class="nav-link {% if 'finance' in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
                     <i class="bi bi-cash-coin"></i> Caja
                 </a>
 
                 <!-- Sección Administración -->
-                {% if user.is_staff %}
+                {% if user.is_superuser or user.groups.all.0.name == 'Administradores' %}
                 <div class="px-4 py-2 mt-4 text-uppercase small opacity-50 fw-bold text-white border-top border-white border-opacity-10 pt-4">Administración</div>
                 <a class="nav-link {% if 'admin-tools' in request.path %}active{% endif %}" href="{% url 'products:admin_tools' %}">
                     <i class="bi bi-shield-lock me-3"></i> Herramientas
@@ -377,5 +412,6 @@
             setPrimaryColor(savedColor, savedRGB);
         })();
     </script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>

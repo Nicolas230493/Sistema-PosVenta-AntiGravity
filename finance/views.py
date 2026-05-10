@@ -8,10 +8,41 @@ from .models import CashSession, CashExpense
 from sales.models import Sale, SaleDetail
 from customers.models import Payment
 
+from django.http import HttpResponse
+from .utils import generate_cash_report_pdf
+
+@login_required
+def export_cash_report(request, pk):
+    session = get_object_or_404(CashSession, pk=pk)
+    
+    # Recalcular métricas para el reporte por si hubo cambios manuales
+    start = session.start_date
+    end = session.end_date if not session.is_open else timezone.now()
+    
+    sales_summary = Sale.objects.filter(
+        user=session.user,
+        date__range=[start, end]
+    ).values('payment_method').annotate(total=models.Sum('total_amount'))
+    
+    payments_summary = Payment.objects.filter(
+        user=session.user,
+        date__range=[start, end]
+    ).values('payment_method').annotate(total=models.Sum('amount'))
+    
+    expenses = session.expenses.all()
+    
+    response = HttpResponse(content_type='application/pdf')
+    filename = f"Arqueo_Caja_{session.id}.pdf"
+    response['Content-Disposition'] = f'attachment; filename={filename}'
+    
+    generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses)
+    return response
+
 @login_required
 def cash_dashboard(request):
     # Filtrar por usuario actual para soporte de turnos
     active_session = CashSession.objects.filter(is_open=True, user=request.user).first()
+    recent_sessions = CashSession.objects.filter(is_open=False).order_by('-end_date')[:5]
     
     # Datos de Rentabilidad (Utilidad Bruta) del día actual para todos los usuarios (Vista Gerencial)
     today = timezone.localdate()
@@ -64,6 +95,7 @@ def cash_dashboard(request):
         
     return render(request, 'finance/dashboard.html', {
         'session': active_session,
+        'recent_sessions': recent_sessions,
         'other_payments': other_payments,
         'profit_stats': {
             'revenue': total_revenue,

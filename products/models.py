@@ -3,6 +3,7 @@ from suppliers.models import Supplier
 
 class Category(models.Model):
     name = models.CharField(max_length=100, verbose_name="Nombre de Categoría")
+    description = models.TextField(verbose_name="Descripción", blank=True, null=True)
     
     def __str__(self):
         return self.name
@@ -23,6 +24,7 @@ class Product(models.Model):
     min_stock = models.IntegerField(default=5, verbose_name="Stock Mínimo")
     expiry_date = models.DateField(null=True, blank=True, verbose_name="Fecha de Vencimiento")
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, verbose_name="Proveedor")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

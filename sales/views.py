@@ -8,6 +8,7 @@ from customers.models import Customer
 from .models import Sale, SaleDetail
 from .utils import generate_sale_pdf, generate_thermal_ticket, generate_total_sales_report
 import json
+from decimal import Decimal
 
 @login_required
 def export_sale_pdf(request, pk):
@@ -40,6 +41,8 @@ def pos_view(request):
         cart_data = request.POST.get('cart_data')
         customer_id = request.POST.get('customer_id')
         payment_method = request.POST.get('payment_method', 'CASH')
+        discount_amount = Decimal(request.POST.get('discount_amount', 0) or 0)
+        surcharge_amount = Decimal(request.POST.get('surcharge_amount', 0) or 0)
         
         try:
             cart = json.loads(cart_data)
@@ -54,9 +57,13 @@ def pos_view(request):
                     user=request.user,
                     customer=customer,
                     total_amount=0,
+                    tax_amount=0,
+                    discount_amount=discount_amount,
+                    surcharge_amount=surcharge_amount,
                     payment_method=payment_method
                 )
-                total = 0
+                total_items = 0
+                total_tax = 0
                 for item in cart:
                     product = Product.objects.select_for_update().get(id=item['id'])
                     qty = int(item['qty'])
@@ -66,14 +73,23 @@ def pos_view(request):
                     product.stock -= qty
                     product.save()
                     
-                    subtotal = product.price * qty
-                    total += subtotal
+                    price = Decimal(item['price'])
+                    subtotal = price * qty
+                    # Cálculo de IVA: el precio ya incluye IVA, lo desglosamos
+                    # tax = subtotal - (subtotal / (1 + tax_rate/100))
+                    tax_rate = product.tax_rate
+                    tax_item = subtotal - (subtotal / (1 + (tax_rate / 100)))
+                    
+                    total_items += subtotal
+                    total_tax += tax_item
                     
                     SaleDetail.objects.create(
                         sale=sale,
                         product=product,
                         quantity=qty,
-                        price=product.price,
+                        price=price,
+                        tax_rate=tax_rate,
+                        tax_amount=tax_item,
                         subtotal=subtotal
                     )
                     
@@ -85,11 +101,13 @@ def pos_view(request):
                         user=request.user
                     )
                 
-                sale.total_amount = total
+                final_total = total_items - discount_amount + surcharge_amount
+                sale.total_amount = final_total
+                sale.tax_amount = total_tax
                 sale.save()
                 
                 if payment_method == 'CC':
-                    customer.balance += total
+                    customer.balance += final_total
                     customer.save()
                 
                 request.session['last_sale_id'] = sale.id

@@ -4,8 +4,41 @@ from django.contrib import messages
 from django.db.models import Q
 from django.db import transaction
 from decimal import Decimal
+from django.http import HttpResponse
+from sales.customer_utils import generate_customer_statement_pdf
+from sales.models import Sale
 from .models import Customer, Payment
 from .forms import CustomerForm
+
+@login_required
+def export_statement_pdf(request, pk):
+    customer = get_object_or_404(Customer, pk=pk)
+    sales = Sale.objects.filter(customer=customer).order_by('date')
+    payments = Payment.objects.filter(customer=customer).order_by('date')
+    
+    # Combinar y ordenar transacciones
+    transactions = []
+    for s in sales:
+        transactions.append({
+            'date': s.date,
+            'concept': f"Venta #{s.id}",
+            'type': 'SALE',
+            'amount': s.total_amount
+        })
+    for p in payments:
+        transactions.append({
+            'date': p.date,
+            'concept': f"Pago #{p.id} ({p.get_payment_method_display()})",
+            'type': 'PAYMENT',
+            'amount': p.amount
+        })
+    
+    transactions.sort(key=lambda x: x['date'])
+    
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename=Estado_Cuenta_{customer.full_name}.pdf'
+    generate_customer_statement_pdf(response, customer, transactions)
+    return response
 
 @login_required
 def customer_payment(request, pk):

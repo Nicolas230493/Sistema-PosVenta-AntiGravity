@@ -57,6 +57,9 @@
                             <i class="bi bi-cash"></i>
                         </a>
                         {% endif %}
+                        <a href="{% url 'customers:export_statement_pdf' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm border" title="Resumen de Cuenta" target="_blank">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                        </a>
                         <a href="{% url 'customers:customer_update' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>

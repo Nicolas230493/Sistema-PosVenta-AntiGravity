@@ -14,29 +14,81 @@ import pandas as pd
 from decimal import Decimal
 
 from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail
-from .forms import ProductForm, InventoryMovementForm
+from .forms import ProductForm, InventoryMovementForm, CategoryForm
 from sales.models import Sale, SaleDetail
 from suppliers.models import Supplier
 from pos_system.settings import BASE_DIR
+
+@staff_member_required
+def category_list(request):
+    categories = Category.objects.all().annotate(product_count=Count('products'))
+    return render(request, 'products/category_list.html', {'categories': categories})
+
+@staff_member_required
+def category_create(request):
+    if request.method == 'POST':
+        form = CategoryForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Categoría creada exitosamente.")
+            return redirect('products:category_list')
+    else:
+        form = CategoryForm()
+    return render(request, 'products/category_form.html', {'form': form, 'title': 'Nueva Categoría'})
+
+@staff_member_required
+def category_update(request, pk):
+    category = get_object_or_404(Category, pk=pk)
+    if request.method == 'POST':
+        form = CategoryForm(request.POST, instance=category)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Categoría actualizada.")
+            return redirect('products:category_list')
+    else:
+        form = CategoryForm(instance=category)
+    return render(request, 'products/category_form.html', {'form': form, 'title': 'Editar Categoría'})
+
+@staff_member_required
+def category_delete(request, pk):
+    category = get_object_or_404(Category, pk=pk)
+    if request.method == 'POST':
+        category.delete()
+        messages.success(request, "Categoría eliminada.")
+        return redirect('products:category_list')
+    return render(request, 'products/category_confirm_delete.html', {'category': category})
 
 @login_required
 def product_list(request):
     query = request.GET.get('q')
     status_filter = request.GET.get('status')
-    products = Product.objects.select_related('supplier').all()
+    category_id = request.GET.get('category')
+    
+    products = Product.objects.select_related('supplier', 'category').all()
+    categories = Category.objects.all()
+
     if query:
         products = products.filter(
             Q(name__icontains=query) | 
             Q(description__icontains=query) |
             Q(sku__icontains=query)
         )
+    
+    if category_id:
+        products = products.filter(category_id=category_id)
+
     if status_filter == 'danger':
         products = products.filter(stock__lte=0)
     elif status_filter == 'warning':
         products = products.filter(stock__gt=0, stock__lte=F('min_stock'))
     elif status_filter == 'success':
         products = products.filter(stock__gt=F('min_stock'))
-    return render(request, 'products/product_list.html', {'products': products, 'today': timezone.localdate()})
+        
+    return render(request, 'products/product_list.html', {
+        'products': products, 
+        'categories': categories,
+        'today': timezone.localdate()
+    })
 
 @login_required
 def product_create(request):
@@ -71,6 +123,9 @@ def product_delete(request, pk):
 
 @staff_member_required
 def download_backup(request):
+    if not request.user.is_superuser:
+        messages.error(request, "Solo el administrador del sistema puede descargar backups.")
+        return redirect('dashboard')
     db_path = os.path.join(BASE_DIR, 'db.sqlite3')
     if os.path.exists(db_path):
         timestamp = timezone.now().strftime('%Y-%m-%d_%H%M')
@@ -82,6 +137,9 @@ def download_backup(request):
 
 @staff_member_required
 def bulk_price_update(request):
+    if not request.user.is_superuser and not request.user.groups.filter(name='Administradores').exists():
+        messages.error(request, "Solo administradores pueden actualizar precios masivamente.")
+        return redirect('products:admin_tools')
     if request.method == 'POST':
         category_id = request.POST.get('category')
         percentage = float(request.POST.get('percentage', 0))
@@ -114,12 +172,61 @@ def stock_loss_create(request):
 
 @staff_member_required
 def business_intelligence(request):
+    if not request.user.is_superuser and not request.user.groups.filter(name='Administradores').exists():
+        messages.error(request, "No tenés permiso para acceder a Inteligencia de Ventas.")
+        return redirect('dashboard')
+
+    # 1. Gráfico de Horas Pico
     sales_by_hour = Sale.objects.annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
+
+    # 2. Top Productos (Más vendidos)
+    top_products = SaleDetail.objects.values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
+
+    # 3. Reporte de Productos Muertos (>60 días sin ventas)
     sixty_days_ago = timezone.now() - timedelta(days=60)
     sold_ids = SaleDetail.objects.filter(sale__date__gte=sixty_days_ago).values_list('product_id', flat=True)
-    dead_products = Product.objects.exclude(id__in=sold_ids).order_by('name')
+    dead_products = Product.objects.exclude(id__in=sold_ids).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
+
+    total_dead_capital = dead_products.aggregate(total=Sum(F('stock') * F('cost_price')))['total'] or 0
+
+    # 4. Ranking de Proveedores (Por inversión en compras)
     supplier_ranking = InventoryMovement.objects.filter(movement_type='IN').values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
-    return render(request, 'products/bi_dashboard.html', {'sales_hour_data': list(sales_by_hour), 'dead_products': dead_products, 'supplier_ranking': supplier_ranking})
+
+    context = {
+        'sales_hour_data': list(sales_by_hour), 
+        'top_products': list(top_products),
+        'dead_products': dead_products[:15],
+        'total_dead_capital': total_dead_capital,
+        'supplier_ranking': supplier_ranking
+    }
+    return render(request, 'products/bi_dashboard.html', context)
+
+@login_required
+def export_advanced_excel(request):
+    """Genera un Excel complejo con múltiples hojas: Ventas Mensuales y Stock Crítico"""
+    today = timezone.localdate()
+    first_day_month = today.replace(day=1)
+
+    # Hoja 1: Ventas del Mes
+    sales = Sale.objects.filter(date__date__gte=first_day_month).values('id', 'date', 'customer__full_name', 'total_amount', 'payment_method')
+    df_sales = pd.DataFrame(list(sales))
+    if not df_sales.empty:
+        df_sales['date'] = df_sales['date'].dt.strftime('%d/%m/%Y %H:%M')
+
+    # Hoja 2: Stock Crítico
+    critical_stock = Product.objects.filter(stock__lte=F('min_stock')).values('name', 'stock', 'min_stock', 'supplier__name')
+    df_critical = pd.DataFrame(list(critical_stock))
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename=Reporte_Avanzado_{today.strftime("%m_%Y")}.xlsx'
+
+    with pd.ExcelWriter(response, engine='openpyxl') as writer:
+        if not df_sales.empty:
+            df_sales.to_excel(writer, sheet_name='Ventas del Mes', index=False)
+        if not df_critical.empty:
+            df_critical.to_excel(writer, sheet_name='Stock Crítico', index=False)
+
+    return response
 
 @login_required
 def order_assistant(request):

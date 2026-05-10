@@ -30,13 +30,11 @@ def log_price_change(sender, instance, **kwargs):
 @receiver(post_save, sender=StockLoss)
 def log_stock_loss(sender, instance, created, **kwargs):
     if created:
-        # Reducir stock del producto
-        product = instance.product
-        product.stock -= instance.quantity
-        product.save()
+        # El stock ya se descuenta en la vista stock_loss_create, 
+        # junto con la creación del movimiento de inventario.
         
         ActivityLog.objects.create(
             user=instance.user,
-            action=f"Baja de stock: {product.name} ({instance.quantity} uni.) - Motivo: {instance.get_reason_display()}",
+            action=f"Baja de stock: {instance.product.name} ({instance.quantity} uni.) - Motivo: {instance.get_reason_display()}",
             module="Inventario"
         )

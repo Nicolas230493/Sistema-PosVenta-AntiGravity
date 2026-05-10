@@ -38,11 +38,18 @@
                     <i class="bi bi-person-circle me-1 opacity-50"></i>{{ sale.user.username }}
                 </td>
                 <td>
-                    {% if sale.payment_method == 'CASH' %}
-                        <span class="small"><i class="bi bi-cash me-1 text-success"></i>Efectivo</span>
-                    {% else %}
-                        <span class="small"><i class="bi bi-credit-card me-1 text-primary"></i>C. Corriente</span>
-                    {% endif %}
+                    <span class="small">
+                        {% if sale.payment_method == 'CASH' %}
+                            <i class="bi bi-cash me-1 text-success"></i>
+                        {% elif sale.payment_method == 'DEBIT' or sale.payment_method == 'CREDIT' %}
+                            <i class="bi bi-credit-card me-1 text-primary"></i>
+                        {% elif sale.payment_method == 'TRANS' %}
+                            <i class="bi bi-qr-code-scan me-1 text-info"></i>
+                        {% else %}
+                            <i class="bi bi-journal-text me-1 text-warning"></i>
+                        {% endif %}
+                        {{ sale.get_payment_method_display }}
+                    </span>
                 </td>
                 <td class="fw-bold text-primary">${{ sale.total_amount }}</td>
                 <td class="text-end pe-4">
@@ -50,8 +57,8 @@
                         <a href="{% url 'sales:export_sale_pdf' pk=sale.pk %}" class="btn btn-outline-danger btn-sm border" title="Descargar PDF">
                             <i class="bi bi-file-pdf"></i>
                         </a>
-                        <a href="{% url 'sales:export_thermal_ticket' pk=sale.pk %}" class="btn btn-outline-secondary btn-sm border" target="_blank" title="Imprimir Ticket">
-                            <i class="bi bi-printer"></i>
+                        <a href="{% url 'sales:export_thermal_ticket' pk=sale.pk %}" class="btn btn-outline-secondary btn-sm border px-3" target="_blank">
+                            <i class="bi bi-printer me-1"></i> Reimprimir
                         </a>
                     </div>
                 </td>

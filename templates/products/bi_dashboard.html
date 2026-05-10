@@ -1,13 +1,22 @@
 {% extends 'base.html' %}
 
-{% block page_title %}Inteligencia de Ventas{% endblock %}
+{% block page_title %}Inteligencia de Negocios{% endblock %}
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <div class="row g-4 mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h4 class="mb-0 fw-bold opacity-75">Análisis de Desempeño</h4>
+        <a href="{% url 'products:export_advanced_excel' %}" class="btn btn-success rounded-pill px-4 shadow-sm">
+            <i class="bi bi-file-earmark-excel me-2"></i>Exportar Reporte Mensual (Excel)
+        </a>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
     <!-- Gráfico de Horas Pico -->
-    <div class="col-lg-8">
+    <div class="col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-4">Ventas por Hora del Día</h5>
@@ -16,11 +25,23 @@
         </div>
     </div>
 
+    <!-- Gráfico Top Productos -->
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4 text-primary">Top 10 Productos más Vendidos</h5>
+                <canvas id="topProductsChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
     <!-- Ranking de Proveedores -->
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body p-4">
-                <h5 class="fw-bold mb-4 text-primary">Ranking Proveedores</h5>
+                <h5 class="fw-bold mb-4 text-primary">Ranking Proveedores (Inversión)</h5>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle">
                         <thead class="small opacity-75">
@@ -44,29 +65,29 @@
             </div>
         </div>
     </div>
-</div>
 
-<div class="row g-4">
     <!-- Productos Muertos -->
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h5 class="fw-bold mb-0 text-danger"><i class="bi bi-ghost me-2"></i>Productos Muertos (60 días sin ventas)</h5>
-                    <span class="badge bg-danger rounded-pill">{{ dead_products.count }} productos</span>
+                    <h5 class="fw-bold mb-0 text-danger"><i class="bi bi-ghost me-2"></i>Mercadería Inmovilizada (>60 días)</h5>
+                    <div class="text-end">
+                        <span class="badge bg-danger rounded-pill mb-1">Capital: ${{ total_dead_capital|floatformat:2 }}</span>
+                        <div class="small opacity-50 fw-bold">CAPITAL MUERTO</div>
+                    </div>
                 </div>
-                <div class="row row-cols-1 row-cols-md-3 g-3">
+                <div class="row row-cols-1 row-cols-md-2 g-2 overflow-auto" style="max-height: 300px;">
                     {% for p in dead_products %}
                     <div class="col">
-                        <div class="p-3 bg-body-secondary rounded-3 border d-flex justify-content-between align-items-center">
-                            <span class="small fw-bold">{{ p.name }}</span>
-                            <span class="badge bg-body text-body-emphasis border shadow-sm">Stock: {{ p.stock }}</span>
+                        <div class="p-2 bg-body-secondary rounded-3 border d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold text-truncate" style="max-width: 150px;">{{ p.name }}</span>
+                            <span class="badge bg-white text-danger border shadow-sm small">${{ p.capital|floatformat:0 }}</span>
                         </div>
                     </div>
                     {% empty %}
                     <div class="col-12 text-center py-5">
-                        <i class="bi bi-check2-circle fs-1 text-success mb-3"></i>
-                        <p class="opacity-75">¡Increíble! Todos tus productos han tenido ventas recientes.</p>
+                        <p class="opacity-75">Sin mercadería inmovilizada.</p>
                     </div>
                     {% endfor %}
                 </div>
@@ -76,41 +97,42 @@
 </div>
 
 <script>
-    const hourCtx = document.getElementById('hoursChart').getContext('2d');
-    const hourData = {{ sales_hour_data|safe }};
     const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim() || '#4318ff';
     
+    // Config Gráfico Horas
+    const hourCtx = document.getElementById('hoursChart').getContext('2d');
+    const hourData = {{ sales_hour_data|safe }};
     new Chart(hourCtx, {
         type: 'bar',
         data: {
             labels: hourData.map(d => d.hour + ':00hs'),
             datasets: [{
-                label: 'Cantidad de Ventas',
+                label: 'Ventas',
                 data: hourData.map(d => d.count),
                 backgroundColor: primaryColor + 'cc',
                 borderColor: primaryColor,
-                borderWidth: 1,
-                borderRadius: 8,
+                borderWidth: 1, borderRadius: 5
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: { 
-                    beginAtZero: true, 
-                    grid: { color: 'rgba(128,128,128,0.1)' },
-                    ticks: { color: 'rgba(128,128,128,0.8)' }
-                },
-                x: { 
-                    grid: { display: false },
-                    ticks: { color: 'rgba(128,128,128,0.8)' }
-                }
-            }
-        }
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+
+    // Config Gráfico Top Productos
+    const topCtx = document.getElementById('topProductsChart').getContext('2d');
+    const topData = {{ top_products|safe }};
+    new Chart(topCtx, {
+        type: 'doughnut',
+        data: {
+            labels: topData.map(d => d.product__name),
+            datasets: [{
+                data: topData.map(d => d.total_qty),
+                backgroundColor: [
+                    primaryColor, '#0dced1', '#ffc107', '#fd7e14', '#dc3545',
+                    '#6610f2', '#6f42c1', '#e83e8c', '#20c997', '#198754'
+                ]
+            }]
+        },
+        options: { responsive: true, cutout: '60%' }
     });
 </script>
 {% endblock %}

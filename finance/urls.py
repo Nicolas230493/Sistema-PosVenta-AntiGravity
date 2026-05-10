@@ -8,4 +8,5 @@ urlpatterns = [
     path('open/', views.open_cash, name='open_cash'),
     path('expense/', views.add_expense, name='add_expense'),
     path('close/', views.close_cash, name='close_cash'),
+    path('report/<int:pk>/', views.export_cash_report, name='export_cash_report'),
 ]

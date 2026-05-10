@@ -13,6 +13,12 @@
             </form>
         </div>
         <div class="col-lg-5 col-md-8 d-flex gap-2 flex-wrap">
+            <select name="category" class="form-select form-select-sm rounded-pill px-3 shadow-sm border-0 bg-body-secondary" style="width: auto;" onchange="this.form.submit()">
+                <option value="">Todas las Categorías</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if request.GET.category == cat.id|stringformat:"i" %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
             <a href="?status=danger" class="btn btn-sm btn-outline-danger rounded-pill px-3 {% if request.GET.status == 'danger' %}active{% endif %}">
                 <i class="bi bi-x-circle me-1"></i> Agotados
             </a>
@@ -93,17 +99,13 @@
                     </div>
                 </td>
                 <td>
-                    {% if "leche" in product.name|lower or "lacteo" in product.name|lower %}
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3">
-                            <i class="bi bi-cup-straw me-1"></i> Lácteo
-                        </span>
-                    {% elif "pan" in product.name|lower %}
-                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-3">
-                            <i class="bi bi-egg-fried me-1"></i> Panadería
+                    {% if product.category %}
+                        <span class="badge bg-{% cycle 'primary' 'success' 'info' 'warning' 'danger' as badge_color %} bg-opacity-10 text-{{ badge_color }} border border-{{ badge_color }}-subtle rounded-pill px-3">
+                            <i class="bi bi-tag me-1"></i> {{ product.category.name }}
                         </span>
                     {% else %}
                         <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-3">
-                            <i class="bi bi-tag me-1"></i> General
+                            <i class="bi bi-tag me-1"></i> Sin Categoría
                         </span>
                     {% endif %}
                 </td>

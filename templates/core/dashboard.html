@@ -3,65 +3,103 @@
 {% block page_title %}Dashboard de Urgencias{% endblock %}
 
 {% block content %}
-{% if vencimientos_criticos %}
-    <div class="alert alert-danger border-0 shadow-sm rounded-4 mb-4 d-flex align-items-center animate__animated animate__pulse animate__infinite">
-        <i class="bi bi-exclamation-triangle-fill fs-3 me-3"></i>
-        <div>
-            <h6 class="mb-0 fw-bold">¡ALERTA DE VENCIMIENTO PRÓXIMO!</h6>
-            <p class="mb-0 small opacity-75">Tienes {{ vencimientos_criticos.count }} productos venciendo en menos de 5 días. Por favor, revisa el inventario.</p>
+<div class="container-fluid px-0">
+    <!-- Alertas de Vencimiento (Regla de Oro: Banner Rojo 7 días) -->
+    {% if vencimientos_7_dias %}
+        <div class="alert alert-danger border-0 shadow-sm rounded-4 mb-4 d-flex align-items-center animate__animated animate__pulse animate__infinite">
+            <div class="flex-shrink-0 bg-white p-2 rounded-circle me-3">
+                <i class="bi bi-calendar-x-fill text-danger fs-4"></i>
+            </div>
+            <div>
+                <h6 class="mb-0 fw-bold">¡ALERTA DE VENCIMIENTO CRÍTICO!</h6>
+                <p class="mb-0 small opacity-75">Hay {{ vencimientos_7_dias.count }} productos que vencen en los próximos 7 días. Tomar acción inmediata.</p>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="row g-4 mb-4">
+        <!-- Resumen Ventas Hoy -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 h-100 shadow-sm overflow-hidden bg-primary text-white">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <p class="mb-0 fw-medium text-uppercase small opacity-75">Ventas Hoy</p>
+                        <i class="bi bi-cash-stack fs-4 opacity-50"></i>
+                    </div>
+                    <h2 class="mb-0 fw-bold">${{ totales.ventas_hoy|floatformat:2 }}</h2>
+                </div>
+                <a href="{{ wa_url }}" target="_blank" class="card-footer bg-white bg-opacity-10 border-0 text-center py-2 text-white text-decoration-none small">
+                    <i class="bi bi-whatsapp me-1"></i> Enviar Reporte de Cierre
+                </a>
+            </div>
+        </div>
+
+        <!-- Tarjeta Agotados -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 h-100 shadow-sm overflow-hidden">
+                <div class="card-body p-4 d-flex align-items-center">
+                    <div class="flex-shrink-0 bg-danger bg-opacity-10 p-3 rounded-4 me-3">
+                        <i class="bi bi-x-circle-fill text-danger fs-1"></i>
+                    </div>
+                    <div>
+                        <p class="mb-1 fw-medium text-uppercase small opacity-75">Agotados</p>
+                        <h2 class="mb-0 fw-bold text-danger">{{ totales.agotados }}</h2>
+                    </div>
+                </div>
+                <div class="bg-danger py-1"></div>
+            </div>
+        </div>
+
+        <!-- Tarjeta Stock Bajo -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 h-100 shadow-sm overflow-hidden">
+                <div class="card-body p-4 d-flex align-items-center">
+                    <div class="flex-shrink-0 bg-warning bg-opacity-10 p-3 rounded-4 me-3">
+                        <i class="bi bi-exclamation-triangle-fill text-warning fs-1"></i>
+                    </div>
+                    <div>
+                        <p class="mb-1 fw-medium text-uppercase small opacity-75">Por Reponer</p>
+                        <h2 class="mb-0 fw-bold text-warning">{{ totales.reponer }}</h2>
+                    </div>
+                </div>
+                <div class="bg-warning py-1"></div>
+            </div>
+        </div>
+
+        <!-- Tarjeta Vencimientos -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 h-100 shadow-sm overflow-hidden">
+                <div class="card-body p-4 d-flex align-items-center">
+                    <div class="flex-shrink-0 bg-info bg-opacity-10 p-3 rounded-4 me-3">
+                        <i class="bi bi-clock-history text-info fs-1"></i>
+                    </div>
+                    <div>
+                        <p class="mb-1 fw-medium text-uppercase small opacity-75">Próximos Vencimientos</p>
+                        <h2 class="mb-0 fw-bold text-info">{{ totales.vencen }}</h2>
+                    </div>
+                </div>
+                <div class="bg-info py-1"></div>
+            </div>
         </div>
     </div>
-{% endif %}
 
-<div class="row g-4 mb-4">
-    <!-- Tarjeta Agotados -->
-    <div class="col-xl-4 col-md-6">
-        <div class="card border-0 h-100 shadow-sm overflow-hidden">
-            <div class="card-body p-4 d-flex align-items-center">
-                <div class="flex-shrink-0 bg-danger bg-opacity-10 p-3 rounded-4 me-3">
-                    <i class="bi bi-x-circle-fill text-danger fs-1"></i>
+    <!-- Gráfico de Horas Pico -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-graph-up me-2 text-primary"></i>Flujo de Ventas por Hora (Últimos 30 días)</h6>
                 </div>
-                <div>
-                    <p class="mb-1 fw-medium text-uppercase small opacity-75">Agotados</p>
-                    <h2 class="mb-0 fw-bold">{{ totales.agotados }}</h2>
+                <div class="card-body">
+                    <div style="height: 300px;">
+                        <canvas id="salesHourChart"></canvas>
+                    </div>
                 </div>
             </div>
-            <div class="bg-danger py-1"></div>
         </div>
     </div>
 
-    <!-- Tarjeta Stock Bajo -->
-    <div class="col-xl-4 col-md-6">
-        <div class="card border-0 h-100 shadow-sm overflow-hidden">
-            <div class="card-body p-4 d-flex align-items-center">
-                <div class="flex-shrink-0 bg-warning bg-opacity-10 p-3 rounded-4 me-3">
-                    <i class="bi bi-exclamation-triangle-fill text-warning fs-1"></i>
-                </div>
-                <div>
-                    <p class="mb-1 fw-medium text-uppercase small opacity-75">Por Reponer</p>
-                    <h2 class="mb-0 fw-bold">{{ totales.reponer }}</h2>
-                </div>
-            </div>
-            <div class="bg-warning py-1"></div>
-        </div>
-    </div>
 
-    <!-- Tarjeta Vencimientos -->
-    <div class="col-xl-4 col-md-12">
-        <div class="card border-0 h-100 shadow-sm overflow-hidden">
-            <div class="card-body p-4 d-flex align-items-center">
-                <div class="flex-shrink-0 bg-info bg-opacity-10 p-3 rounded-4 me-3">
-                    <i class="bi bi-clock-history text-info fs-1"></i>
-                </div>
-                <div>
-                    <p class="mb-1 fw-medium text-uppercase small opacity-75">Por Vencer</p>
-                    <h2 class="mb-0 fw-bold">{{ totales.vencen }}</h2>
-                </div>
-            </div>
-            <div class="bg-info py-1"></div>
-        </div>
-    </div>
-</div>
 
 <div class="row g-4">
     <!-- Listado Faltantes -->
@@ -73,7 +111,7 @@
             <div class="card-body p-0">
                 <div class="list-group list-group-flush">
                     {% for p in agotados %}
-                        <div class="list-group-item py-3 px-4 d-flex align-items-center bg-transparent">
+                        <div class="list-group-item py-3 px-4 d-flex align-items-center bg-transparent border-light">
                             <i class="bi bi-dot text-danger fs-4 me-2"></i>
                             <span class="small fw-medium">{{ p.name }}</span>
                         </div>
@@ -94,7 +132,7 @@
             <div class="card-body p-0">
                 <div class="list-group list-group-flush">
                     {% for p in por_reponer %}
-                        <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent">
+                        <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent border-light">
                             <span class="small fw-medium">{{ p.name }}</span>
                             <span class="badge bg-warning bg-opacity-10 text-warning rounded-pill">{{ p.stock }} uni.</span>
                         </div>
@@ -114,8 +152,8 @@
             </div>
             <div class="card-body p-0">
                 <div class="list-group list-group-flush">
-                    {% for p in vencen_pronto %}
-                        <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent">
+                    {% for p in vencimientos_7_dias %}
+                        <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent border-light">
                             <span class="small fw-medium">{{ p.name }}</span>
                             <span class="badge bg-info bg-opacity-10 text-info rounded-pill">{{ p.expiry_date|date:"d/m" }}</span>
                         </div>
@@ -127,4 +165,57 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('salesHourChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: {{ hour_labels|safe }},
+                datasets: [{
+                    label: 'Ventas ($)',
+                    data: {{ hour_data|safe }},
+                    borderColor: '#4318ff',
+                    backgroundColor: 'rgba(67, 24, 255, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#4318ff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return 'Ventas: $' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+                        ticks: {
+                            callback: function(value) { return '$' + value; }
+                        }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    });
+</script>
 {% endblock %}

@@ -2,3 +2,5 @@ Django>=5.0
 reportlab
 django-widget-tweaks
 python-dotenv
+pandas
+openpyxl

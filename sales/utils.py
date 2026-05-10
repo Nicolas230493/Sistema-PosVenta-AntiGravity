@@ -33,13 +33,24 @@ def generate_sale_pdf(response, sale):
     y -= 0.8 * cm
     p.setFont("Helvetica", 10)
     for detail in sale.details.all():
-        p.drawString(margin, y, f"{detail.quantity}x {detail.product.name}")
+        p.drawString(margin, y, f"{detail.quantity}x {detail.product.name} (IVA {detail.tax_rate}%)")
         p.drawRightString(width - margin, y, f"${detail.subtotal}")
         y -= 0.5 * cm
         
     p.line(margin, y, width - margin, y)
+    y -= 0.6 * cm
+    p.setFont("Helvetica", 10)
+    if sale.discount_amount > 0:
+        p.drawRightString(width - margin, y, f"Descuento: -${sale.discount_amount}")
+        y -= 0.5 * cm
+    if sale.surcharge_amount > 0:
+        p.drawRightString(width - margin, y, f"Recargo: +${sale.surcharge_amount}")
+        y -= 0.5 * cm
+        
     p.setFont("Helvetica-Bold", 12)
-    p.drawRightString(width - margin, y - 0.8 * cm, f"TOTAL: ${sale.total_amount}")
+    p.drawRightString(width - margin, y - 0.5 * cm, f"TOTAL: ${sale.total_amount}")
+    p.setFont("Helvetica", 9)
+    p.drawRightString(width - margin, y - 1.2 * cm, f"Incluye IVA: ${sale.tax_amount}")
     
     p.setFont("Helvetica-Oblique", 8)
     p.drawCentredString(width/2, 1.5 * cm, "2026 Impulso Digital Sgo - Todos los derechos reservados")
@@ -76,12 +87,33 @@ def generate_thermal_ticket(sale):
         y -= 4*mm
     
     p.line(5*mm, y, 75*mm, y)
-    y -= 6*mm
+    y -= 4*mm
+    p.setFont("Helvetica", 7)
+    if sale.discount_amount > 0:
+        p.drawString(5*mm, y, "Descuento:")
+        p.drawRightString(75*mm, y, f"-${sale.discount_amount}")
+        y -= 4*mm
+    if sale.surcharge_amount > 0:
+        p.drawString(5*mm, y, "Recargo:")
+        p.drawRightString(75*mm, y, f"+${sale.surcharge_amount}")
+        y -= 4*mm
+
     p.setFont("Helvetica-Bold", 10)
     p.drawString(5*mm, y, "TOTAL:")
     p.drawRightString(75*mm, y, f"${sale.total_amount}")
+    y -= 4*mm
+    p.setFont("Helvetica", 6)
+    p.drawString(5*mm, y, f"IVA Incluido: ${sale.tax_amount}")
     
-    y -= 8*mm
+    y -= 6*mm
+    p.setFont("Helvetica", 8)
+    p.drawString(5*mm, y, f"Método: {sale.get_payment_method_display()}")
+    
+    y -= 10*mm
+    p.setFont("Helvetica-Bold", 9)
+    p.drawCentredString(width/2, y, "¡GRACIAS POR SU COMPRA!")
+    
+    y -= 6*mm
     p.setFont("Helvetica-Oblique", 6)
     p.drawCentredString(width/2, y, "2026 Impulso Digital Sgo")
     
