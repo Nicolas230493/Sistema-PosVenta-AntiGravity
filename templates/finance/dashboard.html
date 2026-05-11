@@ -199,9 +199,6 @@
                                 <td>${{ s.expected_final_amount }}</td>
                                 <td class="fw-bold">${{ s.real_final_amount }}</td>
                                 <td>
-                                    {% with diff=s.real_final_amount|add:"-session.expected_final_amount" %}
-                                    <!-- Django no soporta restas complejas en templates fácilmente sin filtros personalizados, 
-                                         pero podemos mostrar el estado general -->
                                     {% if s.real_final_amount == s.expected_final_amount %}
                                         <span class="badge bg-success-subtle text-success rounded-pill">OK</span>
                                     {% elif s.real_final_amount > s.expected_final_amount %}
@@ -209,9 +206,11 @@
                                     {% else %}
                                         <span class="badge bg-danger-subtle text-danger rounded-pill">Faltante</span>
                                     {% endif %}
-                                    {% endwith %}
                                 </td>
                                 <td class="text-end pe-4">
+                                    <a href="{% url 'finance:whatsapp_report' pk=s.pk %}" class="btn btn-outline-success btn-sm rounded-pill me-1" target="_blank">
+                                        <i class="bi bi-whatsapp me-1"></i>WhatsApp
+                                    </a>
                                     <a href="{% url 'finance:export_cash_report' pk=s.pk %}" class="btn btn-outline-secondary btn-sm rounded-pill" target="_blank">
                                         <i class="bi bi-file-earmark-pdf me-1"></i>Reporte
                                     </a>

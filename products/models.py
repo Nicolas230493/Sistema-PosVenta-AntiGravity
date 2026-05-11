@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator
 from suppliers.models import Supplier
 
 class Category(models.Model):
@@ -17,11 +18,10 @@ class Product(models.Model):
     name = models.CharField(max_length=200, verbose_name="Nombre")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
-    # ... rest of fields ...
-    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Venta")
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo")
-    stock = models.IntegerField(default=0, verbose_name="Stock")
-    min_stock = models.IntegerField(default=5, verbose_name="Stock Mínimo")
+    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Precio Venta")
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Precio Costo")
+    stock = models.IntegerField(default=0, validators=[MinValueValidator(0)], verbose_name="Stock")
+    min_stock = models.IntegerField(default=5, validators=[MinValueValidator(0)], verbose_name="Stock Mínimo")
     expiry_date = models.DateField(null=True, blank=True, verbose_name="Fecha de Vencimiento")
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, verbose_name="Proveedor")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
@@ -88,7 +88,6 @@ LOSS_REASONS = [
 ]
 
 class StockLoss(models.Model):
-    # ... (campos existentes)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='losses')
     quantity = models.PositiveIntegerField(verbose_name="Cantidad")
     reason = models.CharField(max_length=3, choices=LOSS_REASONS, verbose_name="Motivo")
@@ -104,7 +103,6 @@ class StockLoss(models.Model):
         verbose_name_plural = "Bajas de Stock"
 
 class PriceLog(models.Model):
-    # ... (existente)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_logs')
     old_price = models.DecimalField(max_digits=10, decimal_places=2)
     new_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -141,3 +139,33 @@ class PurchaseDetail(models.Model):
     def save(self, *args, **kwargs):
         self.subtotal = self.quantity * self.cost_price
         super().save(*args, **kwargs)
+
+class PurchaseOrder(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendiente'),
+        ('ORDERED', 'Pedido'),
+        ('RECEIVED', 'Recibido'),
+        ('CANCELLED', 'Cancelado'),
+    ]
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchase_orders', verbose_name="Proveedor")
+    date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING', verbose_name="Estado")
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto Estimado")
+    notes = models.TextField(blank=True, null=True, verbose_name="Notas")
+
+    def __str__(self):
+        return f"Orden #{self.id} - {self.supplier.name} ({self.get_status_display()})"
+
+    class Meta:
+        verbose_name = "Orden de Compra"
+        verbose_name_plural = "Órdenes de Compra"
+        ordering = ['-date']
+
+class PurchaseOrderDetail(models.Model):
+    order = models.ForeignKey(PurchaseOrder, related_name='details', on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Producto")
+    quantity = models.IntegerField(verbose_name="Cantidad")
+    estimated_cost = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Costo Estimado")
+
+    def __str__(self):
+        return f"{self.product.name} ({self.quantity})"

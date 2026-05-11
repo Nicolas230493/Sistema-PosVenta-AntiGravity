@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.db.models import Q
 from django.db import transaction
@@ -9,6 +10,7 @@ from sales.customer_utils import generate_customer_statement_pdf
 from sales.models import Sale
 from .models import Customer, Payment
 from .forms import CustomerForm
+import urllib.parse
 
 @login_required
 def export_statement_pdf(request, pk):
@@ -66,6 +68,15 @@ def customer_payment(request, pk):
                 # Descontar del saldo del cliente
                 customer.balance -= amount
                 customer.save()
+
+                from .models import CurrentAccount
+                CurrentAccount.objects.create(
+                    customer=customer,
+                    amount=amount,
+                    entry_type='CREDIT',
+                    reference=f"Pago Directo",
+                    balance_after=customer.balance
+                )
                 
                 messages.success(request, f"Pago de ${amount} registrado correctamente para {customer.full_name}.")
                 return redirect('customers:customer_list')
@@ -112,6 +123,26 @@ def customer_update(request, pk):
     return render(request, 'customers/customer_form.html', {'form': form, 'title': 'Editar Cliente'})
 
 @login_required
+def customer_detail(request, pk):
+    customer = get_object_or_404(Customer, pk=pk)
+    ledger = customer.account_ledger.all()
+    return render(request, 'customers/customer_detail.html', {
+        'customer': customer,
+        'ledger': ledger
+    })
+
+@login_required
+def whatsapp_reminder(request, pk):
+    customer = get_object_or_404(Customer, pk=pk)
+    if customer.balance <= 0:
+        messages.info(request, "El cliente no tiene saldo deudor.")
+        return redirect('customers:customer_detail', pk=pk)
+    
+    mensaje = f"Hola {customer.full_name}, te saludamos de IMPULSO SMART. Te recordamos que posees un saldo pendiente de ${customer.balance}. ¡Muchas gracias!"
+    link = f"https://wa.me/{customer.phone}?text={urllib.parse.quote(mensaje)}"
+    return redirect(link)
+
+@staff_member_required
 def customer_delete(request, pk):
     customer = get_object_or_404(Customer, pk=pk)
     if customer.dni_cuit == '00000000':
@@ -120,6 +151,6 @@ def customer_delete(request, pk):
         
     if request.method == 'POST':
         customer.delete()
-        messages.success(request, "Cliente eliminado.")
+        messages.success(request, f"Cliente '{customer.full_name}' eliminado.")
         return redirect('customers:customer_list')
     return render(request, 'customers/customer_confirm_delete.html', {'customer': customer})

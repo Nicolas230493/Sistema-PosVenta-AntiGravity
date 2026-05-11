@@ -88,6 +88,7 @@ def pos_view(request):
                         product=product,
                         quantity=qty,
                         price=price,
+                        cost_price_at_sale=product.cost_price,
                         tax_rate=tax_rate,
                         tax_amount=tax_item,
                         subtotal=subtotal

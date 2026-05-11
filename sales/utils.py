@@ -82,7 +82,8 @@ def generate_thermal_ticket(sale):
     y -= 4*mm
     p.setFont("Helvetica", 7)
     for detail in sale.details.all():
-        p.drawString(5*mm, y, f"{detail.quantity}  {detail.product.name[:20]}")
+        product_name = (detail.product.name[:20] if detail.product else "Prod. Eliminado")
+        p.drawString(5*mm, y, f"{detail.quantity}  {product_name}")
         p.drawRightString(75*mm, y, f"${detail.subtotal}")
         y -= 4*mm
     
@@ -159,3 +160,4 @@ def generate_total_sales_report(sales):
     p.save()
     buffer.seek(0)
     return buffer
+

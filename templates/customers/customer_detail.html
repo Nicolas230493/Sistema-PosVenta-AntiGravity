@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Ficha del Cliente{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Información General -->
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-body p-4">
+                <div class="text-center mb-4">
+                    <div class="bg-primary-subtle d-inline-block p-4 rounded-circle mb-3">
+                        <i class="bi bi-person text-primary display-4"></i>
+                    </div>
+                    <h4 class="fw-bold mb-1">{{ customer.full_name }}</h4>
+                    <span class="badge bg-light text-muted border px-3 rounded-pill">ID: {{ customer.dni_cuit }}</span>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="small text-muted text-uppercase fw-bold">Saldo Actual</label>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h2 class="fw-bold {% if customer.balance > 0 %}text-danger{% else %}text-success{% endif %} mb-0">
+                            ${{ customer.balance }}
+                        </h2>
+                        {% if customer.balance > 0 %}
+                        <a href="{% url 'customers:whatsapp_reminder' pk=customer.pk %}" class="btn btn-success rounded-pill px-3" target="_blank">
+                            <i class="bi bi-whatsapp me-1"></i> Cobrar
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <hr class="opacity-10">
+
+                <div class="mb-2">
+                    <i class="bi bi-telephone text-primary me-2"></i> {{ customer.phone|default:"Sin teléfono" }}
+                </div>
+                <div class="mb-2">
+                    <i class="bi bi-envelope text-primary me-2"></i> {{ customer.email|default:"Sin email" }}
+                </div>
+                <div class="mb-2">
+                    <i class="bi bi-geo-alt text-primary me-2"></i> {{ customer.address|default:"Sin dirección" }}
+                </div>
+                <div class="mt-4">
+                    <a href="{% url 'customers:customer_update' pk=customer.pk %}" class="btn btn-outline-secondary w-100 rounded-pill mb-2">
+                        <i class="bi bi-pencil me-1"></i> Editar Datos
+                    </a>
+                    <a href="{% url 'customers:customer_payment' pk=customer.pk %}" class="btn btn-primary w-100 rounded-pill">
+                        <i class="bi bi-cash-stack me-1"></i> Registrar Pago
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historial de Cuenta Corriente -->
+    <div class="col-md-8">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-header bg-transparent border-0 py-4 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0">Resumen de Movimientos (Ledger)</h5>
+                <a href="{% url 'customers:export_statement_pdf' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3" target="_blank">
+                    <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Fecha</th>
+                            <th>Referencia</th>
+                            <th>Tipo</th>
+                            <th class="text-end">Monto</th>
+                            <th class="text-end pe-4">Saldo Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in ledger %}
+                            <tr>
+                                <td class="ps-4 small">{{ entry.date|date:"d/m/Y H:i" }}</td>
+                                <td>{{ entry.reference }}</td>
+                                <td>
+                                    {% if entry.entry_type == 'DEBT' %}
+                                        <span class="badge bg-danger-subtle text-danger rounded-pill">Deuda</span>
+                                    {% else %}
+                                        <span class="badge bg-success-subtle text-success rounded-pill">Abono</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-bold {% if entry.entry_type == 'DEBT' %}text-danger{% else %}text-success{% endif %}">
+                                    {% if entry.entry_type == 'DEBT' %}+{% else %}-{% endif %}${{ entry.amount }}
+                                </td>
+                                <td class="text-end pe-4 fw-bold">${{ entry.balance_after }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-5 opacity-50">No hay movimientos registrados.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

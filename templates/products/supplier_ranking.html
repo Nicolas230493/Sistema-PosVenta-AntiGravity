@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Ranking de Proveedores{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Ranking por Volumen de Inversión -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-header bg-transparent border-0 py-4 px-4">
+                <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart-fill text-primary me-2"></i>Mayor Volumen de Compra</h5>
+                <p class="small text-muted mb-0">Proveedores a los que más capital se les ha destinado.</p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Proveedor</th>
+                            <th class="text-center">Cant. Compras</th>
+                            <th class="text-end pe-4">Total Invertido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in volume_ranking %}
+                            <tr>
+                                <td class="ps-4 fw-bold">{{ item.supplier__name|default:"General" }}</td>
+                                <td class="text-center">{{ item.purchase_count }}</td>
+                                <td class="text-end pe-4 fw-bold text-primary">${{ item.total_spent|floatformat:2 }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center py-4">No hay datos de compras disponibles.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ranking por Margen de Ganancia -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-header bg-transparent border-0 py-4 px-4">
+                <h5 class="fw-bold mb-0"><i class="bi bi-pie-chart-fill text-success me-2"></i>Mejor Margen de Ganancia</h5>
+                <p class="small text-muted mb-0">Basado en la diferencia entre costo y venta de sus productos.</p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Proveedor</th>
+                            <th class="text-center">Utilidad Abs.</th>
+                            <th class="text-end pe-4">Margen %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in ranking_data %}
+                            <tr>
+                                <td class="ps-4 fw-bold">{{ item.supplier }}</td>
+                                <td class="text-center text-success fw-bold">+${{ item.margin_abs|floatformat:2 }}</td>
+                                <td class="text-end pe-4">
+                                    <div class="d-flex align-items-center justify-content-end">
+                                        <span class="me-2 fw-bold">{{ item.margin_pct|floatformat:1 }}%</span>
+                                        <div class="progress w-25" style="height: 6px;">
+                                            <div class="progress-bar bg-success" style="width: {{ item.margin_pct }}%"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center py-4">No hay datos de ventas disponibles.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

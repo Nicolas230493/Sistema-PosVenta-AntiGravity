@@ -3,12 +3,53 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import F, Sum, Count
+from django.db.models import F, Sum, Count, Q
+from django.http import JsonResponse
+from django.urls import reverse
 from products.models import Product, StockLoss
 from sales.models import Sale, SaleDetail
+from customers.models import Customer
 from django.db.models.functions import ExtractHour
 import urllib.parse
 import json
+
+@login_required
+def global_search(request):
+    q = request.GET.get('q', '')
+    results = []
+    if len(q) >= 2:
+        # Productos
+        products = Product.objects.filter(Q(name__icontains=q) | Q(sku__icontains=q))[:5]
+        for p in products:
+            results.append({
+                'title': p.name,
+                'category': 'Producto',
+                'url': reverse('products:product_update', args=[p.id]),
+                'icon': 'bi-box-seam'
+            })
+        
+        # Ventas
+        if q.isdigit():
+            sales = Sale.objects.filter(id__icontains=q)[:5]
+            for s in sales:
+                results.append({
+                    'title': f"Venta #{s.id}",
+                    'category': 'Venta',
+                    'url': reverse('sales:sale_list') + f"?q={s.id}",
+                    'icon': 'bi-receipt'
+                })
+            
+        # Clientes
+        customers = Customer.objects.filter(Q(full_name__icontains=q) | Q(dni_cuit__icontains=q))[:5]
+        for c in customers:
+            results.append({
+                'title': c.full_name,
+                'category': 'Cliente',
+                'url': reverse('customers:customer_detail', args=[c.id]),
+                'icon': 'bi-person'
+            })
+            
+    return JsonResponse({'results': results})
 
 @login_required
 def dashboard_view(request):

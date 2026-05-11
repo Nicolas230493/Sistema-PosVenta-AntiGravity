@@ -55,6 +55,7 @@
             width: 100%;
             min-height: 100vh;
             overflow-x: hidden;
+            position: relative;
         }
 
         /* SIDEBAR ROBUSTA */
@@ -64,23 +65,24 @@
             background: var(--sidebar-bg);
             color: #fff;
             transition: var(--transition);
-            z-index: 1000;
+            z-index: 1050; /* Mayor que navbar-main si fuera necesario */
             display: flex;
             flex-direction: column;
             height: 100vh;
             position: sticky;
             top: 0;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
         /* CONTENIDO PRINCIPAL */
         #page-content-wrapper {
-            flex-grow: 1;
-            width: 100%;
-            min-width: 0;
+            flex: 1;
+            min-width: 0; /* Permite que el contenido se encoja correctamente en flexbox */
             display: flex;
             flex-direction: column;
             background-color: var(--bg-body);
             transition: var(--transition);
+            position: relative;
         }
 
         /* RESPONSIVIDAD REPARADA */
@@ -240,6 +242,12 @@
                 <a class="nav-link {% if 'purchases' in request.path %}active{% endif %}" href="{% url 'products:purchase_list' %}">
                     <i class="bi bi-bag-plus"></i> Compras
                 </a>
+                <a class="nav-link {% if 'purchase-orders' in request.path %}active{% endif %}" href="{% url 'products:purchase_order_list' %}">
+                    <i class="bi bi-list-check"></i> Órdenes de Compra
+                </a>
+                <a class="nav-link {% if 'supplier-ranking' in request.path %}active{% endif %}" href="{% url 'products:supplier_ranking' %}">
+                    <i class="bi bi-trophy"></i> Ranking Proveedores
+                </a>
                 {% endif %}
 
                 <a class="nav-link {% if 'finance' in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
@@ -261,6 +269,14 @@
                 {% endif %}
 
             </nav>
+
+            <!-- Modo Oscuro en Sidebar -->
+            <div class="px-4 py-3 border-top border-white border-opacity-10">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="darkModeSidebar" onchange="toggleDarkMode()">
+                    <label class="form-check-label text-white small" for="darkModeSidebar">Modo Oscuro</label>
+                </div>
+            </div>
 
             <!-- Footer Sidebar -->
             <div class="p-3 mt-auto flex-shrink-0">
@@ -284,6 +300,14 @@
                         <i class="bi bi-list"></i>
                     </button>
                     <h5 class="mb-0 fw-bold d-none d-sm-block">{% block page_title %}{% endblock %}</h5>
+                </div>
+
+                <!-- Buscador Global Trigger -->
+                <div class="d-none d-md-flex me-auto ms-4" style="cursor: pointer;" onclick="openSearch()">
+                    <div class="input-group border rounded-pill overflow-hidden bg-body-secondary" style="width: 350px;">
+                        <span class="input-group-text bg-transparent border-0"><i class="bi bi-search small text-muted"></i></span>
+                        <input type="text" class="form-control border-0 bg-transparent small shadow-none" placeholder="Buscar... (Ctrl + K)" readonly>
+                    </div>
                 </div>
 
                 <div class="d-flex align-items-center">
@@ -359,6 +383,24 @@
         </div>
     </div>
 
+    <!-- Buscador Global Modal -->
+    <div class="modal fade" id="searchModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-body p-0">
+                    <div class="input-group input-group-lg border-bottom">
+                        <span class="input-group-text bg-transparent border-0"><i class="bi bi-search"></i></span>
+                        <input type="text" id="globalSearchInput" class="form-control border-0 shadow-none py-4" placeholder="Buscar productos, ventas, clientes..." autocomplete="off">
+                        <span class="input-group-text bg-transparent border-0 small text-muted">ESC para cerrar</span>
+                    </div>
+                    <div id="searchResults" class="p-2" style="max-height: 400px; overflow-y: auto;">
+                        <div class="p-4 text-center text-muted">Empieza a escribir para buscar...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -376,12 +418,23 @@
             document.documentElement.setAttribute('data-bs-theme', theme);
             localStorage.setItem('theme', theme);
             
+            // Sincronizar switch de sidebar
+            const switchSidebar = document.getElementById('darkModeSidebar');
+            if (switchSidebar) {
+                switchSidebar.checked = (theme === 'dark');
+            }
+
             const btnLight = document.getElementById('btn-theme-light');
             const btnDark = document.getElementById('btn-theme-dark');
             if (btnLight && btnDark) {
                 btnLight.classList.toggle('active', theme === 'light');
                 btnDark.classList.toggle('active', theme === 'dark');
             }
+        }
+
+        function toggleDarkMode() {
+            const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
         }
 
         function setPrimaryColor(hex, rgb, element) {
@@ -402,6 +455,53 @@
                 });
             }
         }
+
+        // Global Search Logic
+        let searchModal;
+        function openSearch() {
+            if (!searchModal) {
+                searchModal = new bootstrap.Modal(document.getElementById('searchModal'));
+            }
+            searchModal.show();
+            setTimeout(() => document.getElementById('globalSearchInput').focus(), 500);
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'k') {
+                e.preventDefault();
+                openSearch();
+            }
+        });
+
+        document.getElementById('globalSearchInput').addEventListener('input', function(e) {
+            const q = e.target.value;
+            const resultsContainer = document.getElementById('searchResults');
+            if (q.length < 2) {
+                resultsContainer.innerHTML = '<div class="p-4 text-center text-muted">Empieza a escribir para buscar...</div>';
+                return;
+            }
+
+            fetch(`/search/?q=${q}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.results.length === 0) {
+                        resultsContainer.innerHTML = '<div class="p-4 text-center text-muted">No se encontraron resultados.</div>';
+                        return;
+                    }
+                    resultsContainer.innerHTML = data.results.map(r => `
+                        <a href="${r.url}" class="d-flex align-items-center p-3 text-decoration-none border-bottom hover-bg-light">
+                            <div class="bg-primary-subtle p-2 rounded-3 me-3">
+                                <i class="bi ${r.icon} text-primary"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-body">${r.title}</div>
+                                <div class="small text-muted">${r.category}</div>
+                            </div>
+                            <i class="bi bi-chevron-right ms-auto text-muted"></i>
+                        </a>
+                    `).join('');
+                });
+        });
 
         (function() {
             const savedTheme = localStorage.getItem('theme') || 'light';

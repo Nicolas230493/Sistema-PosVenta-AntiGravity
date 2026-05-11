@@ -13,7 +13,7 @@ import json
 import pandas as pd
 from decimal import Decimal
 
-from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail
+from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail
 from .forms import ProductForm, InventoryMovementForm, CategoryForm
 from sales.models import Sale, SaleDetail
 from suppliers.models import Supplier
@@ -113,11 +113,12 @@ def product_update(request, pk):
         form = ProductForm(instance=product)
     return render(request, 'products/product_form.html', {'form': form, 'title': 'Editar Producto'})
 
-@login_required
+@staff_member_required
 def product_delete(request, pk):
     product = get_object_or_404(Product, pk=pk)
     if request.method == 'POST':
         product.delete()
+        messages.success(request, f"Producto '{product.name}' eliminado exitosamente.")
         return redirect('products:product_list')
     return render(request, 'products/product_confirm_delete.html', {'product': product})
 
@@ -231,7 +232,78 @@ def export_advanced_excel(request):
 @login_required
 def order_assistant(request):
     low_stock_products = Product.objects.filter(stock__lte=F('min_stock')).select_related('supplier')
+    
+    if request.method == 'POST':
+        # Agrupar productos por proveedor para generar órdenes automáticas
+        suppliers_low_stock = low_stock_products.values_list('supplier_id', flat=True).distinct()
+        created_orders = 0
+        for s_id in suppliers_low_stock:
+            if not s_id: continue
+            prods = low_stock_products.filter(supplier_id=s_id)
+            with transaction.atomic():
+                order = PurchaseOrder.objects.create(supplier_id=s_id)
+                total = 0
+                for p in prods:
+                    qty_to_order = (p.min_stock * 2) - p.stock # Sugerencia: reponer hasta el doble del mínimo
+                    if qty_to_order <= 0: qty_to_order = p.min_stock
+                    PurchaseOrderDetail.objects.create(
+                        order=order,
+                        product=p,
+                        quantity=qty_to_order,
+                        estimated_cost=p.cost_price
+                    )
+                    total += qty_to_order * p.cost_price
+                order.total_amount = total
+                order.save()
+                created_orders += 1
+        
+        if created_orders > 0:
+            messages.success(request, f"Se han generado {created_orders} órdenes de compra automáticas.")
+        else:
+            messages.info(request, "No se generaron órdenes. Verifique que los productos tengan proveedores asignados.")
+        return redirect('products:purchase_order_list')
+
     return render(request, 'products/order_assistant.html', {'low_stock_products': low_stock_products})
+
+@staff_member_required
+def purchase_order_list(request):
+    orders = PurchaseOrder.objects.select_related('supplier').all()
+    return render(request, 'products/purchase_order_list.html', {'orders': orders})
+
+@staff_member_required
+def supplier_ranking(request):
+    # 1. Ranking por Volumen de Compra
+    volume_ranking = Purchase.objects.values('supplier__name').annotate(
+        total_spent=Sum('total_amount'),
+        purchase_count=Count('id')
+    ).order_by('-total_spent')
+
+    # 2. Ranking por Margen de Ganancia (Basado en productos vendidos de cada proveedor)
+    # Margen = (Precio Venta - Precio Costo) / Precio Venta
+    margin_ranking = SaleDetail.objects.filter(product__supplier__isnull=False).values('product__supplier__name').annotate(
+        total_revenue=Sum('subtotal'),
+        total_cost=Sum(F('quantity') * F('cost_price_at_sale')),
+    ).annotate(
+        absolute_margin=F('total_revenue') - F('total_cost')
+    ).order_by('-absolute_margin')
+
+    # Calculamos el porcentaje de margen en Python para evitar divisiones por cero complejas en SQL
+    ranking_data = []
+    for item in margin_ranking:
+        revenue = item['total_revenue']
+        cost = item['total_cost']
+        margin_pct = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+        ranking_data.append({
+            'supplier': item['product__supplier__name'],
+            'revenue': revenue,
+            'margin_abs': item['absolute_margin'],
+            'margin_pct': margin_pct
+        })
+
+    return render(request, 'products/supplier_ranking.html', {
+        'volume_ranking': volume_ranking,
+        'ranking_data': ranking_data
+    })
 
 @login_required
 def inventory_history(request):

@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.utils import timezone
 from django.db import models
@@ -10,6 +11,7 @@ from customers.models import Payment
 
 from django.http import HttpResponse
 from .utils import generate_cash_report_pdf
+import urllib.parse
 
 @login_required
 def export_cash_report(request, pk):
@@ -38,7 +40,7 @@ def export_cash_report(request, pk):
     generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses)
     return response
 
-@login_required
+@staff_member_required
 def cash_dashboard(request):
     # Filtrar por usuario actual para soporte de turnos
     active_session = CashSession.objects.filter(is_open=True, user=request.user).first()
@@ -50,10 +52,9 @@ def cash_dashboard(request):
     
     total_revenue = sales_today.aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
     
-    # Calcular costo de lo vendido hoy
-    # Usamos F() para multiplicar cantidad por precio de costo de cada producto en el momento de la consulta
+    # RECALIBRACIÓN: Calcular costo usando el precio de costo CAPTURADO en el momento de la venta
     total_cost = SaleDetail.objects.filter(sale__date__date=today).aggregate(
-        total=models.Sum(models.F('quantity') * models.F('product__cost_price'))
+        total=models.Sum(models.F('quantity') * models.F('cost_price_at_sale'))
     )['total'] or Decimal('0.00')
     
     gross_profit = total_revenue - total_cost
@@ -82,9 +83,16 @@ def cash_dashboard(request):
         
         # 4. Cálculo del esperado
         active_session.expected_final_amount = active_session.initial_amount + active_session.total_sales_cash - expenses
-        active_session.save()
         
         # 5. Otras métricas (Tarjetas, Transferencias) para información del cajero
+        digital_sales = Sale.objects.filter(
+            user=request.user,
+            date__gte=active_session.start_date
+        ).exclude(payment_method__in=['CASH', 'CC']).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
+        
+        active_session.total_sales_digital = digital_sales
+        active_session.save()
+        
         other_payments = Sale.objects.filter(
             user=request.user,
             date__gte=active_session.start_date
@@ -152,6 +160,13 @@ def close_cash(request):
             real_amount = Decimal(request.POST.get('real_amount', '0.00'))
             notes = request.POST.get('notes', '')
             
+            # Recalcular ventas digitales finales
+            digital_sales = Sale.objects.filter(
+                user=request.user,
+                date__gte=session.start_date
+            ).exclude(payment_method__in=['CASH', 'CC']).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
+            
+            session.total_sales_digital = digital_sales
             session.end_date = timezone.now()
             session.real_final_amount = real_amount
             session.notes = notes
@@ -170,3 +185,18 @@ def close_cash(request):
             messages.error(request, f"Error al cerrar caja: {str(e)}")
             
     return redirect('finance:cash_dashboard')
+
+@login_required
+def whatsapp_report(request, pk):
+    session = get_object_or_404(CashSession, pk=pk)
+    fecha = session.end_date.strftime('%d/%m/%Y') if session.end_date else timezone.now().strftime('%d/%m/%Y')
+    total = session.real_final_amount + session.total_sales_digital
+    efectivo = session.real_final_amount
+    digital = session.total_sales_digital
+    diferencia = session.real_final_amount - session.expected_final_amount
+    
+    estado_dif = f"Faltante: ${abs(diferencia)}" if diferencia < 0 else (f"Sobrante: ${diferencia}" if diferencia > 0 else "Sin diferencias")
+    
+    mensaje = f"📊 CIERRE IMPULSO SMART - {fecha} | Total: ${total} | Efec: ${efectivo} | Dig: ${digital} | {estado_dif}"
+    link = f"https://wa.me/?text={urllib.parse.quote(mensaje)}"
+    return redirect(link)

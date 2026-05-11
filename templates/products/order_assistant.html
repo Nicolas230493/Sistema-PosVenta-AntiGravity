@@ -12,9 +12,17 @@
                         <h4 class="fw-bold mb-1">Lista de Faltantes</h4>
                         <p class="opacity-75 small mb-0">Productos con stock por debajo del mínimo establecido.</p>
                     </div>
-                    <a href="https://wa.me/?text={{ whatsapp_text|urlencode }}" target="_blank" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm">
-                        <i class="bi bi-whatsapp me-2"></i>PEDIDO GENERAL
-                    </a>
+                    <div class="d-flex">
+                        <form method="post" class="me-2">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
+                                <i class="bi bi-magic me-2"></i>GENERAR ÓRDENES
+                            </button>
+                        </form>
+                        <a href="https://wa.me/?text={{ whatsapp_text|urlencode }}" target="_blank" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm">
+                            <i class="bi bi-whatsapp me-2"></i>PEDIDO GENERAL
+                        </a>
+                    </div>
                 </div>
 
                 <div class="table-responsive">

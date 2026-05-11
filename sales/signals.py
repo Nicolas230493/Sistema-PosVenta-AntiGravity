@@ -1,7 +1,9 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.db import transaction
 from .models import Sale, SaleDetail
 from core.models import ActivityLog
+from customers.models import CurrentAccount
 from decimal import Decimal
 
 @receiver(post_save, sender=Sale)
@@ -23,8 +25,17 @@ def handle_sale_effects(sender, instance, created, **kwargs):
 
         # 3. Cuenta Corriente
         if instance.payment_method == 'CC' and instance.customer:
-            instance.customer.balance += instance.total_amount
-            instance.customer.save()
+            with transaction.atomic():
+                instance.customer.balance += instance.total_amount
+                instance.customer.save()
+                
+                CurrentAccount.objects.create(
+                    customer=instance.customer,
+                    amount=instance.total_amount,
+                    entry_type='DEBT',
+                    reference=f"Venta #{instance.id}",
+                    balance_after=instance.customer.balance
+                )
 
 # Eliminamos update_stock_on_sale porque pos_view ya descuenta stock y crea InventoryMovement.
 # Esto evita que se descuente el doble.

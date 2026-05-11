@@ -25,4 +25,6 @@ urlpatterns = [
     path('stock-loss/', views.stock_loss_create, name='stock_loss_create'),
     path('bi/', views.business_intelligence, name='bi_dashboard'),
     path('orders/', views.order_assistant, name='order_assistant'),
+    path('purchase-orders/', views.purchase_order_list, name='purchase_order_list'),
+    path('supplier-ranking/', views.supplier_ranking, name='supplier_ranking'),
 ]

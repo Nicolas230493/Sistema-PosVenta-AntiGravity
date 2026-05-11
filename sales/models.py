@@ -33,6 +33,7 @@ class SaleDetail(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True)
     quantity = models.IntegerField(verbose_name="Cantidad")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
+    cost_price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo (Histórico)")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto IVA")
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Subtotal")

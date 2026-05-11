@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Órdenes de Compra{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-transparent border-0 py-4 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0">Órdenes de Compra Generadas</h5>
+                <a href="{% url 'products:order_assistant' %}" class="btn btn-primary rounded-pill px-4">
+                    <i class="bi bi-plus-lg me-1"></i>Nuevo Asistente
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">ID</th>
+                            <th>Fecha</th>
+                            <th>Proveedor</th>
+                            <th>Productos</th>
+                            <th>Monto Est.</th>
+                            <th>Estado</th>
+                            <th class="text-end pe-4">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orders %}
+                            <tr>
+                                <td class="ps-4">#{{ order.id }}</td>
+                                <td>{{ order.date|date:"d/m/Y H:i" }}</td>
+                                <td class="fw-bold">{{ order.supplier.name }}</td>
+                                <td>
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill">
+                                        {{ order.details.count }} items
+                                    </span>
+                                </td>
+                                <td class="fw-bold text-primary">${{ order.total_amount }}</td>
+                                <td>
+                                    {% if order.status == 'PENDING' %}
+                                        <span class="badge bg-warning-subtle text-warning rounded-pill">Pendiente</span>
+                                    {% elif order.status == 'ORDERED' %}
+                                        <span class="badge bg-info-subtle text-info rounded-pill">Pedido</span>
+                                    {% elif order.status == 'RECEIVED' %}
+                                        <span class="badge bg-success-subtle text-success rounded-pill">Recibido</span>
+                                    {% else %}
+                                        <span class="badge bg-danger-subtle text-danger rounded-pill">Cancelado</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-outline-secondary btn-sm rounded-pill" title="Ver Detalle" 
+                                            data-bs-toggle="modal" data-bs-target="#orderDetail{{ order.id }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <a href="https://wa.me/{{ order.supplier.phone|default:'' }}?text=Hola%20{{ order.supplier.name }},%20adjunto%20orden%20de%20compra%20#{{ order.id }}" 
+                                       target="_blank" class="btn btn-outline-success btn-sm rounded-pill">
+                                        <i class="bi bi-whatsapp"></i>
+                                    </a>
+                                </td>
+                            </tr>
+
+                            <!-- Modal Detalle -->
+                            <div class="modal fade" id="orderDetail{{ order.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content border-0 shadow rounded-4">
+                                        <div class="modal-header border-0 px-4 pt-4">
+                                            <h5 class="modal-title fw-bold">Detalle Orden #{{ order.id }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body p-4">
+                                            <p><strong>Proveedor:</strong> {{ order.supplier.name }}</p>
+                                            <table class="table table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Producto</th>
+                                                        <th class="text-center">Cant.</th>
+                                                        <th class="text-end">Costo Est.</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for detail in order.details.all %}
+                                                        <tr>
+                                                            <td>{{ detail.product.name }}</td>
+                                                            <td class="text-center">{{ detail.quantity }}</td>
+                                                            <td class="text-end">${{ detail.estimated_cost }}</td>
+                                                        </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                            <div class="text-end mt-3">
+                                                <h5 class="fw-bold">Total: ${{ order.total_amount }}</h5>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 opacity-50">No hay órdenes de compra registradas.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -52,6 +52,9 @@
                 </td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
+                        <a href="{% url 'customers:customer_detail' pk=customer.pk %}" class="btn btn-outline-primary btn-sm border" title="Ficha del Cliente">
+                            <i class="bi bi-person-badge"></i>
+                        </a>
                         {% if customer.balance > 0 %}
                         <a href="{% url 'customers:customer_payment' pk=customer.pk %}" class="btn btn-outline-success btn-sm border" title="Registrar Pago">
                             <i class="bi bi-cash"></i>
