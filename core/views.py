@@ -59,10 +59,10 @@ def dashboard_view(request):
     # 1. Alertas Críticas
     agotados = Product.objects.filter(stock__lte=0)
     por_reponer = Product.objects.filter(stock__gt=0, stock__lte=F('min_stock'))
-    vencimientos_7_dias = Product.objects.filter(expiry_date__range=[today, next_week]).order_by('expiry_date')
+    vencimientos_30_dias = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).order_by('expiry_date')
     
-    if vencimientos_7_dias.exists():
-        messages.error(request, f"¡URGENTE! Hay {vencimientos_7_dias.count()} productos por vencer en menos de una semana.")
+    if vencimientos_30_dias.exists():
+        messages.warning(request, f"Atención: Hay {vencimientos_30_dias.count()} productos próximos a vencer (30 días).")
 
     # 2. Resumen del Día para WhatsApp
     sales_today = Sale.objects.filter(date__date=today)
@@ -137,7 +137,7 @@ def dashboard_view(request):
     context = {
         'agotados': agotados,
         'por_reponer': por_reponer,
-        'vencimientos_7_dias': vencimientos_7_dias,
+        'vencimientos_30_dias': vencimientos_30_dias,
         'wa_url': wa_url,
         'bajas_recientes': bajas_recientes[:10],
         'hour_labels': json.dumps(hour_labels),
@@ -145,7 +145,7 @@ def dashboard_view(request):
         'totales': {
             'agotados': agotados.count(),
             'reponer': por_reponer.count(),
-            'vencen': vencimientos_7_dias.count(),
+            'vencen': vencimientos_30_dias.count(),
             'bajas_mes': bajas_recientes.count(),
             'ventas_hoy': float(total_revenue)
         }

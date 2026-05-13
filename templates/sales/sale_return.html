@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h4 class="mb-0 fw-bold">Procesar Devolución - Venta #{{ sale.id }}</h4>
+                </div>
+                <div class="card-body">
+                    <p><strong>Cliente:</strong> {{ sale.customer.full_name|default:"Consumidor Final" }}</p>
+                    <p><strong>Fecha Venta:</strong> {{ sale.date|date:"d/m/Y H:i" }}</p>
+                    <p><strong>Método de Pago:</strong> {{ sale.payment_method.name }}</p>
+                    <hr>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Motivo de la Devolución</label>
+                            <textarea name="reason" class="form-control" rows="2" placeholder="Ej: Producto fallado, error en talle..."></textarea>
+                        </div>
+                        
+                        <h5 class="fw-bold mb-3">Productos Vendidos</h5>
+                        <div class="table-responsive">
+                            <table class="table align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Cantidad Vendida</th>
+                                        <th>Precio</th>
+                                        <th>Cantidad a Devolver</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for detail in sale.details.all %}
+                                    <tr>
+                                        <td>{{ detail.product.name }}</td>
+                                        <td>{{ detail.quantity }}</td>
+                                        <td>${{ detail.price }}</td>
+                                        <td style="width: 150px;">
+                                            <input type="number" name="qty_{{ detail.id }}" class="form-control form-control-sm" value="0" min="0" max="{{ detail.quantity }}">
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-secondary rounded-pill px-4">Cancelar</a>
+                            <button type="submit" class="btn btn-danger rounded-pill px-4">Confirmar Devolución</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -5,9 +5,10 @@ from django.contrib import messages
 from django.utils import timezone
 from django.db import models
 from decimal import Decimal
-from .models import CashSession, CashExpense
+from .models import CashSession, CashExpense, PaymentMethod
 from sales.models import Sale, SaleDetail
 from customers.models import Payment
+from products.models import Purchase
 
 from django.http import HttpResponse
 from .utils import generate_cash_report_pdf
@@ -24,12 +25,12 @@ def export_cash_report(request, pk):
     sales_summary = Sale.objects.filter(
         user=session.user,
         date__range=[start, end]
-    ).values('payment_method').annotate(total=models.Sum('total_amount'))
+    ).values('payment_method__name').annotate(total=models.Sum('total_amount'))
     
     payments_summary = Payment.objects.filter(
         user=session.user,
         date__range=[start, end]
-    ).values('payment_method').annotate(total=models.Sum('amount'))
+    ).values('payment_method__name').annotate(total=models.Sum('amount'))
     
     expenses = session.expenses.all()
     
@@ -37,6 +38,7 @@ def export_cash_report(request, pk):
     filename = f"Arqueo_Caja_{session.id}.pdf"
     response['Content-Disposition'] = f'attachment; filename={filename}'
     
+    # Updated generate_cash_report_pdf to handle the updated summaries
     generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses)
     return response
 
@@ -60,35 +62,41 @@ def cash_dashboard(request):
     gross_profit = total_revenue - total_cost
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
 
+    other_payments = []
     if active_session:
+        # Métodos de pago
+        cash_method = PaymentMethod.objects.filter(name='Efectivo').first()
+        cc_method = PaymentMethod.objects.filter(name='Cuenta Corriente').first()
+
         # 1. Ventas en efectivo de ESTA sesión
         sales_cash = Sale.objects.filter(
             user=request.user,
             date__gte=active_session.start_date, 
-            payment_method='CASH'
+            payment_method=cash_method
         ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
         
         # 2. Pagos de deudas de clientes en efectivo en ESTA sesión
         customer_payments_cash = Payment.objects.filter(
             user=request.user,
             date__gte=active_session.start_date,
-            payment_method='CASH'
+            payment_method=cash_method
         ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
 
         active_session.total_sales_cash = sales_cash + customer_payments_cash
         
         # 3. Egresos registrados en la sesión
-        expenses = CashExpense.objects.filter(session=active_session).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
-        active_session.total_expenses = expenses
+        expenses_total = CashExpense.objects.filter(session=active_session).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        active_session.total_expenses = expenses_total
         
         # 4. Cálculo del esperado
-        active_session.expected_final_amount = active_session.initial_amount + active_session.total_sales_cash - expenses
+        active_session.expected_final_amount = active_session.initial_amount + active_session.total_sales_cash - expenses_total
         
         # 5. Otras métricas (Tarjetas, Transferencias) para información del cajero
         digital_sales = Sale.objects.filter(
             user=request.user,
-            date__gte=active_session.start_date
-        ).exclude(payment_method__in=['CASH', 'CC']).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
+            date__gte=active_session.start_date,
+            payment_method__is_digital=True
+        ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
         
         active_session.total_sales_digital = digital_sales
         active_session.save()
@@ -96,10 +104,7 @@ def cash_dashboard(request):
         other_payments = Sale.objects.filter(
             user=request.user,
             date__gte=active_session.start_date
-        ).exclude(payment_method__in=['CASH', 'CC']).values('payment_method').annotate(total=models.Sum('total_amount'))
-        
-    else:
-        other_payments = []
+        ).exclude(payment_method__in=[cash_method, cc_method]).values('payment_method__name').annotate(total=models.Sum('total_amount'))
         
     return render(request, 'finance/dashboard.html', {
         'session': active_session,
@@ -163,8 +168,9 @@ def close_cash(request):
             # Recalcular ventas digitales finales
             digital_sales = Sale.objects.filter(
                 user=request.user,
-                date__gte=session.start_date
-            ).exclude(payment_method__in=['CASH', 'CC']).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
+                date__gte=session.start_date,
+                payment_method__is_digital=True
+            ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
             
             session.total_sales_digital = digital_sales
             session.end_date = timezone.now()
@@ -186,10 +192,65 @@ def close_cash(request):
             
     return redirect('finance:cash_dashboard')
 
+@staff_member_required
+def fiscal_reports(request):
+    month = request.GET.get('month', timezone.now().month)
+    year = request.GET.get('year', timezone.now().year)
+    
+    # IVA Ventas
+    sales = Sale.objects.filter(date__month=month, date__year=year).order_by('date')
+    
+    # IVA Compras
+    purchases = Purchase.objects.filter(date__month=month, date__year=year).order_by('date')
+
+    if 'export' in request.GET:
+        import pandas as pd
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename=Reporte_Fiscal_{month}_{year}.xlsx'
+        
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            # Hoja Ventas
+            sales_data = []
+            for s in sales:
+                neto = s.total_amount - s.tax_amount
+                sales_data.append({
+                    'Fecha': s.date.strftime('%d/%m/%Y'),
+                    'Comprobante': f'Ticket #{s.id}',
+                    'Cliente': s.customer.full_name if s.customer else 'Consumidor Final',
+                    'DNI/CUIT': s.customer.dni_cuit if s.customer else '---',
+                    'Neto Gravado': neto,
+                    'IVA Liquidado': s.tax_amount,
+                    'Total': s.total_amount
+                })
+            pd.DataFrame(sales_data).to_excel(writer, sheet_name='IVA Ventas', index=False)
+            
+            purchases_data = []
+            for p in purchases:
+                total = p.total_amount
+                iva = total - (total / Decimal('1.21'))
+                neto = total - iva
+                purchases_data.append({
+                    'Fecha': p.date.strftime('%d/%m/%Y'),
+                    'Proveedor': p.supplier.name,
+                    'Factura': p.invoice_number,
+                    'Neto Gravado': neto,
+                    'IVA Crédito': iva,
+                    'Total': total
+                })
+            pd.DataFrame(purchases_data).to_excel(writer, sheet_name='IVA Compras', index=False)
+        return response
+
+    return render(request, 'finance/fiscal_reports.html', {
+        'sales': sales,
+        'purchases': purchases,
+        'selected_month': int(month),
+        'selected_year': int(year)
+    })
+
 @login_required
 def whatsapp_report(request, pk):
     session = get_object_or_404(CashSession, pk=pk)
-    fecha = session.end_date.strftime('%d/%m/%Y') if session.end_date else timezone.now().strftime('%d/%m/%Y')
+    fecha = timezone.localtime(session.end_date).strftime('%d/%m/%Y') if session.end_date else timezone.now().strftime('%d/%m/%Y')
     total = session.real_final_amount + session.total_sales_digital
     efectivo = session.real_final_amount
     digital = session.total_sales_digital

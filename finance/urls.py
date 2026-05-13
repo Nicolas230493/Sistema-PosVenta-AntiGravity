@@ -10,4 +10,5 @@ urlpatterns = [
     path('close/', views.close_cash, name='close_cash'),
     path('report/<int:pk>/', views.export_cash_report, name='export_cash_report'),
     path('whatsapp-report/<int:pk>/', views.whatsapp_report, name='whatsapp_report'),
+    path('fiscal-reports/', views.fiscal_reports, name='fiscal_reports'),
 ]

@@ -12,7 +12,7 @@ class CategoryForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ['sku', 'name', 'category', 'description', 'price', 'cost_price', 'tax_rate', 'stock', 'min_stock', 'expiry_date', 'supplier']
+        fields = ['sku', 'barcode', 'name', 'unit', 'category', 'description', 'price', 'cost_price', 'tax_rate', 'stock', 'min_stock', 'expiry_date', 'supplier']
         widgets = {
             'expiry_date': forms.DateInput(attrs={'type': 'date'}),
         }

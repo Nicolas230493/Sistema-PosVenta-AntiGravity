@@ -27,10 +27,9 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">Método de Pago</label>
                         <select name="payment_method" class="form-select bg-light border-0">
-                            <option value="CASH">💵 Efectivo</option>
-                            <option value="DEBIT">💳 Tarjeta de Débito</option>
-                            <option value="CREDIT">💳 Tarjeta de Crédito</option>
-                            <option value="TRANS">📲 Transferencia / QR</option>
+                            {% for pm in payment_methods %}
+                                <option value="{{ pm.id }}">{{ pm.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
 

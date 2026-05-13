@@ -7,10 +7,11 @@ class ActivityLog(models.Model):
     module = models.CharField(max_length=100, verbose_name="Módulo")
     timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora")
     details = models.TextField(blank=True, null=True, verbose_name="Detalles")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
 
     class Meta:
-        verbose_name = "Log de Actividad"
-        verbose_name_plural = "Logs de Actividad"
+        verbose_name = "Log de Auditoría"
+        verbose_name_plural = "Logs de Auditoría"
         ordering = ['-timestamp']
 
     def __str__(self):

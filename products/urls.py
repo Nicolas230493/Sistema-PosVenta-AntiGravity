@@ -17,7 +17,7 @@ urlpatterns = [
     path('export/excel/', views.export_inventory_excel, name='export_inventory_excel'),
     path('export/excel-advanced/', views.export_advanced_excel, name='export_advanced_excel'),
     path('import/excel/', views.import_inventory_excel, name='import_inventory_excel'),
-    path('stock-entry/', views.stock_entry, name='stock_entry'),
+    path('stock-entry/', views.stock_entry_scanner, name='stock_entry_scanner'),
     path('purchases/', views.purchase_list, name='purchase_list'),
     path('purchases/new/', views.purchase_create, name='purchase_create'),
     path('admin-tools/', views.bulk_price_update, name='admin_tools'),
@@ -26,5 +26,7 @@ urlpatterns = [
     path('bi/', views.business_intelligence, name='bi_dashboard'),
     path('orders/', views.order_assistant, name='order_assistant'),
     path('purchase-orders/', views.purchase_order_list, name='purchase_order_list'),
+    path('purchase-orders/<int:pk>/status/', views.update_purchase_order_status, name='update_purchase_order_status'),
+    path('export/labels/', views.export_labels, name='export_labels'),
     path('supplier-ranking/', views.supplier_ranking, name='supplier_ranking'),
 ]

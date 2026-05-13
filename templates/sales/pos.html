@@ -11,7 +11,7 @@
             <h2 class="mb-0">Productos</h2>
             <div class="input-group w-50 shadow-sm">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-upc-scan"></i></span>
-                <input type="text" id="sku-scanner" class="form-control border-0" placeholder="Escanear Código (SKU)..." autofocus>
+                <input type="text" id="sku-scanner" class="form-control border-0" placeholder="Escanear Código (Barcode/SKU)..." autofocus>
             </div>
         </div>
         <div class="mb-3">
@@ -19,7 +19,7 @@
         </div>
         <div class="row" id="product-list">
             {% for product in products %}
-            <div class="col-md-4 mb-3 product-item" data-name="{{ product.name }}" data-sku="{{ product.sku }}">
+            <div class="col-md-4 mb-3 product-item" data-name="{{ product.name }}" data-sku="{{ product.sku }}" data-barcode="{{ product.barcode|default:'' }}">
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <h5 class="card-title fw-bold">{{ product.name }}</h5>
@@ -29,7 +29,8 @@
                             data-id="{{ product.id }}"
                             data-name="{{ product.name }}" 
                             data-price="{{ product.price }}"
-                            data-sku="{{ product.sku }}">
+                            data-sku="{{ product.sku }}"
+                            data-barcode="{{ product.barcode|default:'' }}">
                             <i class="bi bi-plus-lg me-1"></i>Agregar
                         </button>
                     </div>
@@ -53,6 +54,7 @@
                 {% for customer in customers %}
                     <option value="{{ customer.id }}" 
                             data-balance="{{ customer.balance }}"
+                            data-points="{{ customer.points }}"
                             {% if customer.id == default_customer.id %}selected{% endif %}>
                         {{ customer.full_name }} {% if customer.balance > 0 %}(Deuda: ${{ customer.balance }}){% endif %}
                     </option>
@@ -63,21 +65,46 @@
             </div>
         </div>
 
+        <!-- Lista de Precios -->
+        <div class="mb-3">
+            <label class="form-label small opacity-75 fw-bold">Lista de Precios</label>
+            <select id="price-list-select" class="form-select border-0 shadow-sm bg-body-secondary">
+                <option value="default">Estándar / General</option>
+                {% for pl in price_lists %}
+                    <option value="{{ pl.id }}">{{ pl.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
         <!-- Método de Pago -->
         <div class="mb-3">
             <label class="form-label small opacity-75 fw-bold">Método de Pago</label>
             <select name="payment_method" id="payment-method" form="pos-form" class="form-select border-0 shadow-sm fw-bold bg-body-secondary">
-                <option value="CASH">💵 Efectivo</option>
-                <option value="DEBIT">💳 Tarjeta de Débito</option>
-                <option value="CREDIT">💳 Tarjeta de Crédito</option>
-                <option value="TRANS">📲 Transferencia / QR</option>
-                <option value="CC">📝 Cuenta Corriente (Fiar)</option>
+                {% for pm in payment_methods %}
+                    <option value="{{ pm.id }}">{{ pm.name }}</option>
+                {% endfor %}
             </select>
         </div>
 
         <ul class="list-group mb-3 shadow-sm border-0" id="cart-items">
             <!-- Items go here -->
         </ul>
+
+        <!-- Fidelización (Puntos) -->
+        <div id="points-section" class="card border-0 shadow-sm p-3 mb-3 bg-warning bg-opacity-10 d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-bold text-warning-emphasis"><i class="bi bi-star-fill me-1"></i> Puntos Disponibles:</span>
+                <span id="available-points" class="badge bg-warning text-dark rounded-pill">0</span>
+            </div>
+            <div class="input-group input-group-sm">
+                <input type="number" id="points-to-redeem" name="points_redeemed" form="pos-form" class="form-control border-0 shadow-sm" placeholder="Cantidad a canjear" min="0">
+                <button class="btn btn-warning btn-sm fw-bold" type="button" id="apply-points">Canjear</button>
+            </div>
+            <div id="points-discount-info" class="small mt-1 text-muted d-none">
+                Descuento aplicado: <strong class="text-success">-$<span id="points-discount-val">0.00</span></strong>
+            </div>
+            <input type="hidden" name="points_discount" id="points-discount-input" form="pos-form" value="0">
+        </div>
 
         <!-- Descuentos y Recargos -->
         <div class="card border-0 shadow-sm p-3 mb-3 bg-light">
@@ -103,6 +130,8 @@
             {% csrf_token %}
             <input type="hidden" name="cart_data" id="cart-data">
             <input type="hidden" name="customer_id" id="form-customer-id">
+            <input type="hidden" name="points_redeemed" id="form-points-redeemed">
+            <input type="hidden" name="points_discount" id="form-points-discount">
             <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow">
                 <i class="bi bi-check2-circle me-2"></i>CONFIRMAR VENTA
             </button>
@@ -142,40 +171,112 @@
 {% endblock %}
 {% block extra_js %}
 <script>
-    // Sincronizar selección de cliente con el campo oculto del form
-    document.getElementById('customer-select').addEventListener('change', function() {
+    const productPrices = {{ product_prices_json|safe }};
+    const promotions = {{ promotions_json|safe }};
+    const priceListSelect = document.getElementById('price-list-select');
+    const customerSelect = document.getElementById('customer-select');
+    const pointsSection = document.getElementById('points-section');
+    const availablePointsSpan = document.getElementById('available-points');
+    const pointsToRedeemInput = document.getElementById('points-to-redeem');
+    const pointsDiscountInfo = document.getElementById('points-discount-info');
+    const pointsDiscountVal = document.getElementById('points-discount-val');
+    const pointsDiscountInput = document.getElementById('points-discount-input');
+
+    priceListSelect.addEventListener('change', function() {
+        const listId = this.value;
+        document.querySelectorAll('.product-item').forEach(el => {
+            const btn = el.querySelector('.add-to-cart');
+            const productId = btn.dataset.id;
+            
+            if (!el.dataset.basePrice) {
+                el.dataset.basePrice = btn.dataset.price;
+            }
+
+            let newPrice = parseFloat(el.dataset.basePrice);
+            if (listId !== 'default' && productPrices[productId] && productPrices[productId][listId]) {
+                newPrice = productPrices[productId][listId];
+            }
+
+            btn.dataset.price = newPrice;
+            el.querySelector('.text-primary').innerText = '$' + newPrice.toFixed(2);
+        });
+        
+        cart.forEach(item => {
+            if (listId === 'default') {
+                const el = document.querySelector(`.add-to-cart[data-id="${item.id}"]`);
+                if (el) item.price = parseFloat(el.parentElement.parentElement.parentElement.dataset.basePrice || item.price);
+            } else if (productPrices[item.id] && productPrices[item.id][listId]) {
+                item.price = productPrices[item.id][listId];
+            }
+        });
+        updateCart();
+    });
+
+    // Sincronizar selección de cliente
+    customerSelect.addEventListener('change', function() {
         const selected = this.options[this.selectedIndex];
         const balance = parseFloat(selected.dataset.balance || 0);
+        const points = parseInt(selected.dataset.points || 0);
         const alert = document.getElementById('balance-alert');
         
         document.getElementById('form-customer-id').value = this.value;
         
-        if (balance > 0) {
-            alert.classList.remove('d-none');
+        if (balance > 0) alert.classList.remove('d-none');
+        else alert.classList.add('d-none');
+
+        // Mostrar sección de puntos si el cliente tiene puntos y no es el consumidor final
+        if (points > 0 && selected.value !== '{{ default_customer.id }}') {
+            pointsSection.classList.remove('d-none');
+            availablePointsSpan.innerText = points;
+            pointsToRedeemInput.max = points;
         } else {
-            alert.classList.add('d-none');
+            pointsSection.classList.add('d-none');
+            resetPoints();
         }
     });
-    // Inicializar el valor
-    document.getElementById('form-customer-id').value = document.getElementById('customer-select').value;
+
+    document.getElementById('apply-points').addEventListener('click', function() {
+        const points = parseInt(pointsToRedeemInput.value || 0);
+        const available = parseInt(availablePointsSpan.innerText);
+        
+        if (points > available) {
+            alert("No tienes suficientes puntos.");
+            return;
+        }
+        
+        // Regla: 1 punto = $1 (configurable luego)
+        const discount = points * 1; 
+        pointsDiscountVal.innerText = discount.toFixed(2);
+        pointsDiscountInput.value = discount;
+        pointsDiscountInfo.classList.remove('d-none');
+        updateCart();
+    });
+
+    function resetPoints() {
+        pointsToRedeemInput.value = '';
+        pointsDiscountInput.value = 0;
+        pointsDiscountInfo.classList.add('d-none');
+        updateCart();
+    }
 
     let cart = [];
 
-    // Lógica de Escáner SKU
+    // Lógica de Escáner Barcode/SKU
     const skuScanner = document.getElementById('sku-scanner');
     skuScanner.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
-            const sku = this.value.trim();
-            if (sku) {
-                const productBtn = document.querySelector(`.add-to-cart[data-sku="${sku}"]`);
+            const code = this.value.trim();
+            if (code) {
+                let productBtn = document.querySelector(`.add-to-cart[data-barcode="${code}"]`);
+                if (!productBtn) productBtn = document.querySelector(`.add-to-cart[data-sku="${code}"]`);
+
                 if (productBtn) {
                     productBtn.click();
                     this.value = '';
-                    // Feedback visual
                     this.classList.add('is-valid');
                     setTimeout(() => this.classList.remove('is-valid'), 500);
                 } else {
-                    alert('Producto no encontrado con el SKU: ' + sku);
+                    alert('Producto no encontrado: ' + code);
                     this.value = '';
                 }
             }
@@ -189,11 +290,8 @@
             const price = parseFloat(btn.dataset.price);
 
             const existing = cart.find(item => item.id === id);
-            if (existing) {
-                existing.qty++;
-            } else {
-                cart.push({ id, name, price, qty: 1 });
-            }
+            if (existing) existing.qty++;
+            else cart.push({ id, name, price, qty: 1 });
             updateCart();
         });
     });
@@ -202,32 +300,70 @@
         const list = document.getElementById('cart-items');
         list.innerHTML = '';
         let subtotal_items = 0;
-        
+        const currentDay = new Date().getDay(); // 0 (Dom) - 6 (Sáb)
+        // Django choices are 0 (Lun) - 6 (Dom), JS getDay is 0 (Dom) - 6 (Sáb)
+        const djangoDay = (currentDay + 6) % 7; 
+
         cart.forEach((item, index) => {
-            subtotal_items += item.price * item.qty;
+            let itemPrice = item.price;
+            let promoApplied = "";
+
+            // Aplicar Promociones
+            promotions.forEach(promo => {
+                const isTarget = promo.product_ids.includes(parseInt(item.id)); // Simplificación: solo por ID producto por ahora
+                if (isTarget) {
+                    if (promo.type === 'PERCENT') {
+                        const disc = itemPrice * (promo.discount / 100);
+                        itemPrice -= disc;
+                        promoApplied = `<span class="badge bg-success-subtle text-success ms-2 small">-${promo.discount}%</span>`;
+                    } else if (promo.type === 'DAY_DISCOUNT' && promo.day === djangoDay) {
+                        const disc = itemPrice * (promo.discount / 100);
+                        itemPrice -= disc;
+                        promoApplied = `<span class="badge bg-info-subtle text-info ms-2 small">Promo Día</span>`;
+                    } else if (promo.type === 'FIXED_QTY' && item.qty >= promo.fixed_qty) {
+                        // Ejemplo: 2x1 -> fixed_qty=2, fixed_price=precio de 1
+                        const numPacks = Math.floor(item.qty / promo.fixed_qty);
+                        const remainder = item.qty % promo.fixed_qty;
+                        const packTotal = numPacks * promo.fixed_price;
+                        const remainderTotal = remainder * item.price;
+                        // Ajustar el subtotal de este item para que coincida con el pack
+                        itemPrice = (packTotal + remainderTotal) / item.qty;
+                        promoApplied = `<span class="badge bg-primary-subtle text-primary ms-2 small">${promo.name}</span>`;
+                    }
+                }
+            });
+
+            subtotal_items += itemPrice * item.qty;
             list.innerHTML += `
                 <li class="list-group-item d-flex justify-content-between lh-sm">
                     <div>
-                        <h6 class="my-0">${item.name}</h6>
-                        <small class="text-muted">x${item.qty} a $${item.price.toFixed(2)}</small>
+                        <h6 class="my-0">${item.name} ${promoApplied}</h6>
+                        <small class="text-muted">x${item.qty} a $${itemPrice.toFixed(2)}</small>
                     </div>
                     <div class="text-end">
-                        <span class="text-muted d-block">$${(item.price * item.qty).toFixed(2)}</span>
+                        <span class="text-muted d-block">$${(itemPrice * item.qty).toFixed(2)}</span>
                         <button class="btn btn-sm btn-link text-danger p-0" onclick="remove(${index})">Eliminar</button>
                     </div>
                 </li>
             `;
+            // Guardar info extra en el objeto de item para el backend
+            item.discounted_price = itemPrice;
+            item.original_price_at_sale = item.price; // El precio de la lista seleccionada
         });
 
         const discount = parseFloat(document.getElementById('discount-input').value || 0);
+        const pointsDiscount = parseFloat(pointsDiscountInput.value || 0);
         const surcharge = parseFloat(document.getElementById('surcharge-input').value || 0);
-        const total = subtotal_items - discount + surcharge;
+        const total = subtotal_items - discount - pointsDiscount + surcharge;
 
-        document.getElementById('total-amount').innerText = total.toFixed(2);
+        document.getElementById('total-amount').innerText = Math.max(0, total).toFixed(2);
         document.getElementById('cart-data').value = JSON.stringify(cart);
+        
+        // Sincronizar inputs ocultos
+        document.getElementById('form-points-redeemed').value = document.getElementById('points-to-redeem').value || 0;
+        document.getElementById('form-points-discount').value = pointsDiscount;
     }
 
-    // Escuchar cambios en descuento y recargo
     document.getElementById('discount-input').addEventListener('input', updateCart);
     document.getElementById('surcharge-input').addEventListener('input', updateCart);
 
@@ -243,5 +379,8 @@
             el.style.display = name.includes(val) ? 'block' : 'none';
         });
     });
+    
+    // Inicializar
+    document.getElementById('form-customer-id').value = customerSelect.value;
 </script>
 {% endblock %}

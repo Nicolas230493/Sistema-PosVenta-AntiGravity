@@ -14,8 +14,18 @@ class Category(models.Model):
         verbose_name_plural = "Categorías"
 
 class Product(models.Model):
-    sku = models.CharField(max_length=50, unique=True, default='000000', verbose_name="SKU / Código de Barras")
+    UNIT_CHOICES = [
+        ('unidad', 'Unidad'),
+        ('kg', 'Kilogramo'),
+        ('lt', 'Litro'),
+        ('m', 'Metro'),
+        ('caja', 'Caja'),
+        ('paquete', 'Paquete'),
+    ]
+    sku = models.CharField(max_length=50, unique=True, default='000000', verbose_name="SKU Interno")
+    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True, verbose_name="Código de Barras")
     name = models.CharField(max_length=200, verbose_name="Nombre")
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='unidad', verbose_name="Unidad")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Precio Venta")
@@ -114,6 +124,30 @@ class PriceLog(models.Model):
         verbose_name = "Log de Precios"
         verbose_name_plural = "Logs de Precios"
 
+class PriceList(models.Model):
+    name = models.CharField(max_length=100, verbose_name="Nombre de Lista")
+    active = models.BooleanField(default=True, verbose_name="Activa")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Lista de Precios"
+        verbose_name_plural = "Listas de Precios"
+
+class ProductPrice(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_lists')
+    price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name='products')
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio")
+
+    def __str__(self):
+        return f"{self.product.name} en {self.price_list.name}: ${self.price}"
+
+    class Meta:
+        unique_together = ('product', 'price_list')
+        verbose_name = "Precio de Producto"
+        verbose_name_plural = "Precios de Productos"
+
 class Purchase(models.Model):
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchases', verbose_name="Proveedor")
     invoice_number = models.CharField(max_length=50, verbose_name="Número de Factura", blank=True, null=True)
@@ -144,7 +178,8 @@ class PurchaseOrder(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pendiente'),
         ('ORDERED', 'Pedido'),
-        ('RECEIVED', 'Recibido'),
+        ('RECEIVED', 'Recibido (Stock sumado)'),
+        ('PAID', 'Pagado (Impacta Caja)'),
         ('CANCELLED', 'Cancelado'),
     ]
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchase_orders', verbose_name="Proveedor")

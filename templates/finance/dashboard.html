@@ -287,23 +287,17 @@
         <form action="{% url 'finance:close_cash' %}" method="post" class="modal-content border-0 shadow-lg rounded-4">
             {% csrf_token %}
             <div class="modal-header border-0 px-4 pt-4">
-                <h5 class="modal-title fw-bold">Cierre de Turno y Arqueo</h5>
+                <h5 class="modal-title fw-bold">Cierre de Turno y Arqueo (Ciego)</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <div class="alert alert-primary border-0 rounded-3 mb-4">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Monto esperado en caja:</span>
-                        <strong class="fs-5">${{ session.expected_final_amount }}</strong>
-                    </div>
-                </div>
                 <div class="mb-4 text-center">
                     <label class="form-label fw-bold text-uppercase small opacity-75">Efectivo Real contado en caja</label>
                     <div class="input-group">
                         <span class="input-group-text border-0 bg-light fs-4">$</span>
                         <input type="number" name="real_amount" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" required step="0.01">
                     </div>
-                    <div class="form-text mt-2">Cuenta todo el efectivo que tienes físicamente para cerrar.</div>
+                    <div class="form-text mt-2">Cuenta todo el efectivo que tienes físicamente. Por seguridad, el sistema no mostrará el esperado hasta después del cierre.</div>
                 </div>
                 <div class="mb-0">
                     <label class="form-label fw-bold small">Observaciones del Turno</label>

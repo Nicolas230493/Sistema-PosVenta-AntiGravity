@@ -8,6 +8,7 @@ from decimal import Decimal
 from django.http import HttpResponse
 from sales.customer_utils import generate_customer_statement_pdf
 from sales.models import Sale
+from finance.models import PaymentMethod
 from .models import Customer, Payment
 from .forms import CustomerForm
 import urllib.parse
@@ -45,15 +46,19 @@ def export_statement_pdf(request, pk):
 @login_required
 def customer_payment(request, pk):
     customer = get_object_or_404(Customer, pk=pk)
+    payment_methods = PaymentMethod.objects.filter(active=True).exclude(name='Cuenta Corriente')
+    
     if request.method == 'POST':
         amount = request.POST.get('amount')
-        method = request.POST.get('payment_method')
+        method_id = request.POST.get('payment_method')
         notes = request.POST.get('notes')
         
         try:
             amount = Decimal(amount)
             if amount <= 0:
                 raise Exception("El monto debe ser mayor a cero.")
+            
+            method = PaymentMethod.objects.get(id=method_id)
             
             with transaction.atomic():
                 # Crear el registro de pago

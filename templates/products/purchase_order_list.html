@@ -44,19 +44,53 @@
                                         <span class="badge bg-info-subtle text-info rounded-pill">Pedido</span>
                                     {% elif order.status == 'RECEIVED' %}
                                         <span class="badge bg-success-subtle text-success rounded-pill">Recibido</span>
+                                    {% elif order.status == 'PAID' %}
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill">Pagado</span>
                                     {% else %}
                                         <span class="badge bg-danger-subtle text-danger rounded-pill">Cancelado</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end pe-4">
-                                    <button class="btn btn-outline-secondary btn-sm rounded-pill" title="Ver Detalle" 
-                                            data-bs-toggle="modal" data-bs-target="#orderDetail{{ order.id }}">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <a href="https://wa.me/{{ order.supplier.phone|default:'' }}?text=Hola%20{{ order.supplier.name }},%20adjunto%20orden%20de%20compra%20#{{ order.id }}" 
-                                       target="_blank" class="btn btn-outline-success btn-sm rounded-pill">
-                                        <i class="bi bi-whatsapp"></i>
-                                    </a>
+                                    <div class="btn-group">
+                                        <button class="btn btn-outline-secondary btn-sm rounded-start-pill" title="Ver Detalle" 
+                                                data-bs-toggle="modal" data-bs-target="#orderDetail{{ order.id }}">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <a href="https://wa.me/{{ order.supplier.phone|default:'' }}?text=Hola%20{{ order.supplier.name }},%20adjunto%20orden%20de%20compra%20#{{ order.id }}" 
+                                           target="_blank" class="btn btn-outline-success btn-sm">
+                                            <i class="bi bi-whatsapp"></i>
+                                        </a>
+                                        <button class="btn btn-outline-primary btn-sm rounded-end-pill dropdown-toggle" data-bs-toggle="dropdown">
+                                            <i class="bi bi-gear"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                                            {% if order.status == 'PENDING' or order.status == 'ORDERED' %}
+                                            <li>
+                                                <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
+                                                    {% csrf_token %}<input type="hidden" name="status" value="RECEIVED">
+                                                    <button type="submit" class="dropdown-item py-2"><i class="bi bi-box-seam me-2 text-success"></i>Marcar como Recibido</button>
+                                                </form>
+                                            </li>
+                                            {% endif %}
+                                            {% if order.status == 'RECEIVED' %}
+                                            <li>
+                                                <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
+                                                    {% csrf_token %}<input type="hidden" name="status" value="PAID">
+                                                    <button type="submit" class="dropdown-item py-2"><i class="bi bi-cash-coin me-2 text-primary"></i>Marcar como Pagado (Caja)</button>
+                                                </form>
+                                            </li>
+                                            {% endif %}
+                                            {% if order.status != 'PAID' and order.status != 'CANCELLED' %}
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
+                                                    {% csrf_token %}<input type="hidden" name="status" value="CANCELLED">
+                                                    <button type="submit" class="dropdown-item py-2 text-danger"><i class="bi bi-x-circle me-2"></i>Cancelar Orden</button>
+                                                </form>
+                                            </li>
+                                            {% endif %}
+                                        </ul>
+                                    </div>
                                 </td>
                             </tr>
 

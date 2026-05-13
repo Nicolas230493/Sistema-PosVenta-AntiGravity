@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="card-header bg-primary text-white py-4 text-center border-0">
+                <i class="bi bi-upc-scan fs-1 mb-2 d-block"></i>
+                <h4 class="fw-bold mb-0">Ingreso de Mercadería</h4>
+                <p class="small opacity-75 mb-0">Escanea los productos que llegan al depósito</p>
+            </div>
+            <div class="card-body p-5">
+                <form method="post" id="scanner-form">
+                    {% csrf_token %}
+                    <div class="mb-4 text-center">
+                        <label class="form-label fw-bold text-uppercase small opacity-75">Código de Barras / SKU</label>
+                        <input type="text" name="barcode" id="barcode-input" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" autofocus required>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small">Cantidad a Ingresar</label>
+                        <div class="input-group input-group-lg">
+                            <button class="btn btn-outline-secondary border-0 bg-light" type="button" onclick="adjustQty(-1)">-</button>
+                            <input type="number" name="quantity" id="quantity-input" class="form-control border-0 bg-light text-center fw-bold" value="1" min="1">
+                            <button class="btn btn-outline-secondary border-0 bg-light" type="button" onclick="adjustQty(1)">+</button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow-sm">
+                        <i class="bi bi-plus-circle me-2"></i>CONFIRMAR INGRESO
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4">
+            <a href="{% url 'products:inventory_history' %}" class="btn btn-link text-body-secondary text-decoration-none small">
+                <i class="bi bi-clock-history me-1"></i> Ver historial de movimientos
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function adjustQty(val) {
+        const input = document.getElementById('quantity-input');
+        input.value = Math.max(1, parseInt(input.value) + val);
+    }
+
+    // El input de barcode siempre tiene el foco
+    const barcodeInput = document.getElementById('barcode-input');
+    document.addEventListener('click', () => barcodeInput.focus());
+</script>
+{% endblock %}

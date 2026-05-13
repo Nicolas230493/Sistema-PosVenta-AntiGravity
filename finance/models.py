@@ -2,6 +2,18 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 
+class PaymentMethod(models.Model):
+    name = models.CharField(max_length=50, unique=True, verbose_name="Nombre")
+    is_digital = models.BooleanField(default=False, verbose_name="¿Es Digital/Banco?")
+    active = models.BooleanField(default=True, verbose_name="Activo")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Método de Pago"
+        verbose_name_plural = "Métodos de Pago"
+
 class CashSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Cajero")
     start_date = models.DateTimeField(auto_now_add=True, verbose_name="Apertura")

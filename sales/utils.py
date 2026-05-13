@@ -33,7 +33,9 @@ def generate_sale_pdf(response, sale):
     y -= 0.8 * cm
     p.setFont("Helvetica", 10)
     for detail in sale.details.all():
-        p.drawString(margin, y, f"{detail.quantity}x {detail.product.name} (IVA {detail.tax_rate}%)")
+        unit = getattr(detail.product, 'unit', '') if detail.product else ''
+        unit_display = " un." if unit == 'unidad' else f" {unit}" if unit else ""
+        p.drawString(margin, y, f"{detail.quantity}{unit_display} x {detail.product.name if detail.product else 'Prod. Eliminado'} (IVA {detail.tax_rate}%)")
         p.drawRightString(width - margin, y, f"${detail.subtotal}")
         y -= 0.5 * cm
         
@@ -76,14 +78,18 @@ def generate_thermal_ticket(sale):
     
     y = height - 27*mm
     p.setFont("Helvetica-Bold", 7)
-    p.drawString(5*mm, y, "CANT  PRODUCTO")
+    p.drawString(5*mm, y, "CANT.  PRODUCTO")
     p.drawRightString(75*mm, y, "TOTAL")
     
     y -= 4*mm
     p.setFont("Helvetica", 7)
     for detail in sale.details.all():
-        product_name = (detail.product.name[:20] if detail.product else "Prod. Eliminado")
-        p.drawString(5*mm, y, f"{detail.quantity}  {product_name}")
+        unit = getattr(detail.product, 'unit', '') if detail.product else ''
+        unit_display = " un." if unit == 'unidad' else f" {unit}" if unit else ""
+        product_name = (detail.product.name[:18] if detail.product else "Prod. Eliminado")
+        
+        p.drawString(5*mm, y, f"{detail.quantity}{unit_display}")
+        p.drawString(20*mm, y, product_name)
         p.drawRightString(75*mm, y, f"${detail.subtotal}")
         y -= 4*mm
     

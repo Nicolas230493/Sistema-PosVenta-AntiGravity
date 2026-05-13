@@ -65,19 +65,23 @@
             background: var(--sidebar-bg);
             color: #fff;
             transition: var(--transition);
-            z-index: 1050; /* Mayor que navbar-main si fuera necesario */
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            position: sticky;
+            z-index: 1050;
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100vh !important;
+            position: fixed !important;
+            left: 0;
             top: 0;
             box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+            overflow: hidden !important;
         }
 
-        /* CONTENIDO PRINCIPAL */
+        /* Ajuste del contenido cuando la sidebar está a la izquierda */
         #page-content-wrapper {
             flex: 1;
-            min-width: 0; /* Permite que el contenido se encoja correctamente en flexbox */
+            margin-left: var(--sidebar-width);
+            margin-right: 0;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             background-color: var(--bg-body);
@@ -85,70 +89,60 @@
             position: relative;
         }
 
-        /* RESPONSIVIDAD REPARADA */
-        @media (max-width: 992px) {
-            #sidebar-wrapper {
-                position: fixed;
-                left: calc(-1 * var(--sidebar-width));
-                height: 100vh;
-            }
-            #wrapper.toggled #sidebar-wrapper {
-                left: 0;
-            }
-            #wrapper.toggled #page-content-wrapper {
-                margin-left: 0;
-            }
+        /* Estado Toggled (Oculto en Desktop, Mostrado en Mobile) */
+        #wrapper.toggled #sidebar-wrapper {
+            left: calc(-1 * var(--sidebar-width)) !important;
         }
-        
-        #wrapper.toggled:not(.mobile-toggled) #sidebar-wrapper {
-            margin-left: calc(-1 * var(--sidebar-width));
+        #wrapper.toggled #page-content-wrapper {
+            margin-left: 0 !important;
         }
 
-        .navbar-main {
-            height: var(--topbar-height);
-            background: var(--bs-body-bg);
-            backdrop-filter: blur(10px);
-            margin: 15px 25px;
-            border-radius: 20px;
-            padding: 0 25px;
-            box-shadow: 0 10px 30px -5px rgba(0,0,0,0.07);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border: 1px solid var(--bs-border-color);
-            flex-shrink: 0;
+        /* Área de Scroll Dinámico */
+        .sidebar-scrollable {
+            flex: 1 1 auto !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            padding-bottom: 20px;
         }
+
+        /* Scrollbar Minimalista */
+        .sidebar-scrollable::-webkit-scrollbar { width: 3px; }
+        .sidebar-scrollable::-webkit-scrollbar-track { background: transparent; }
+        .sidebar-scrollable::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+        .sidebar-scrollable:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); }
 
         /* Navegación Sidebar */
         .sidebar-nav {
             padding: 10px 0;
             list-style: none;
-            flex-grow: 1;
-            overflow-y: auto;
         }
 
         .sidebar-nav .nav-link {
             color: rgba(255,255,255,0.7);
             padding: 14px 25px;
+            margin: 4px 20px;
             display: flex;
             align-items: center;
             font-size: 0.95rem;
-            font-weight: 500;
-            transition: 0.2s;
-            border-left: 4px solid transparent;
+            font-weight: 400;
+            transition: all 0.2s ease;
             text-decoration: none;
+            border-radius: 12px;
+            border-left: 4px solid transparent;
         }
 
         .sidebar-nav .nav-link:hover, .sidebar-nav .nav-link.active {
             color: #fff;
-            background: rgba(var(--primary-rgb), 0.15);
+            background: rgba(255, 255, 255, 0.08);
             border-left-color: var(--primary-color);
         }
 
         .sidebar-nav .nav-link i {
-            margin-right: 15px;
-            font-size: 1.2rem;
-            color: rgba(255,255,255,0.4);
+            width: 25px;
+            text-align: center;
+            margin-right: 18px;
+            font-size: 1.1rem;
+            color: rgba(255,255,255,0.5);
             transition: 0.2s;
         }
 
@@ -156,48 +150,29 @@
             color: var(--primary-color);
         }
 
+        /* Títulos de Sección */
+        .sidebar-section-title {
+            padding: 30px 30px 10px 30px;
+            text-transform: uppercase;
+            font-weight: 800;
+            font-size: 0.65rem;
+            letter-spacing: 2px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
         /* Color Picker */
         .color-dot {
-            width: 24px;
-            height: 24px;
-            border-radius: 6px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
             display: inline-block;
             cursor: pointer;
-            border: 2px solid transparent;
+            border: 2px solid rgba(0,0,0,0.1);
             transition: all 0.2s;
-            position: relative;
+            margin: 4px;
         }
-        .color-dot:hover { transform: translateY(-2px); }
-        .color-dot.active::after {
-            content: "\F26E";
-            font-family: "bootstrap-icons";
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: white; font-size: 12px;
-        }
-
-        /* Scrollbar Sidebar */
-        .sidebar-nav::-webkit-scrollbar { width: 5px; }
-        .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-        .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-
-        /* RESPONSIVIDAD REPARADA */
-        @media (max-width: 992px) {
-            #sidebar-wrapper {
-                margin-left: calc(-1 * var(--sidebar-width));
-                position: fixed;
-                height: 100vh;
-            }
-            #wrapper.toggled #sidebar-wrapper {
-                margin-left: 0;
-            }
-        }
-
-        /* ESTADOS DE FORMULARIO */
-        .form-control:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.25rem rgba(var(--primary-rgb), 0.1);
-        }
+        .color-dot:hover { transform: scale(1.2); }
+        .color-dot.active { border: 2px solid #fff; box-shadow: 0 0 0 2px var(--primary-color); }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -207,6 +182,7 @@
         {% if user.is_authenticated %}
         <!-- SIDEBAR -->
         <aside id="sidebar-wrapper">
+            <!-- Header Sidebar -->
             <div class="p-4 mb-2 d-flex align-items-center flex-shrink-0">
                 <div class="bg-primary p-2 rounded-3 me-2 shadow-sm">
                     <i class="bi bi-box-seam text-white fs-4"></i>
@@ -214,78 +190,93 @@
                 <h4 class="text-white fw-bold mb-0">Impulso Smart</h4>
             </div>
             
-            <nav class="sidebar-nav">
-                <!-- Enlaces Principales (Todos) -->
+            <!-- Area de Navegación (Scrollable) -->
+            <nav class="sidebar-nav flex-grow-1 overflow-y-auto">
+                <div class="sidebar-section-title">Operaciones</div>
+                
                 <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
                     <i class="bi bi-grid-1x2"></i> Dashboard
                 </a>
-                <a class="nav-link {% if 'pos' in request.path and request.resolver_match.url_name == 'pos' %}active{% endif %}" href="{% url 'sales:pos' %}">
-                    <i class="bi bi-cart3"></i> Punto de Venta
-                </a>
-                <a class="nav-link {% if request.resolver_match.url_name == 'sale_list' %}active{% endif %}" href="{% url 'sales:sale_list' %}">
-                    <i class="bi bi-receipt"></i> Historial de Ventas
-                </a>
                 
-                {% if user.is_superuser or user.groups.all.0.name == 'Encargados' or user.groups.all.0.name == 'Administradores' %}
-                <a class="nav-link {% if 'products' in request.path and 'category' not in request.path %}active{% endif %}" href="{% url 'products:product_list' %}">
-                    <i class="bi bi-archive"></i> Inventario
+                <a class="nav-link {% if 'pos' in request.path and request.resolver_match.url_name == 'pos' %}active{% endif %}" href="{% url 'sales:pos' %}">
+                    <i class="bi bi-cart3"></i> Ventas / POS
                 </a>
+
+                <a class="nav-link {% if 'finance' in request.path and 'fiscal' not in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
+                    <i class="bi bi-cash-stack"></i> Caja / Arqueo
+                </a>
+
+                <a class="nav-link {% if request.resolver_match.url_name == 'sale_list' %}active{% endif %}" href="{% url 'sales:sale_list' %}">
+                    <i class="bi bi-receipt"></i> Historial Ventas
+                </a>
+
+                <div class="sidebar-section-title">Gestión Comercial</div>
+
+                <a class="nav-link {% if 'customers' in request.path and 'reminder' not in request.path %}active{% endif %}" href="{% url 'customers:customer_list' %}">
+                    <i class="bi bi-people"></i> Clientes
+                </a>
+
+                <a class="nav-link {% if 'customers' in request.path and 'reminder' in request.path %}active{% endif %}" href="{% url 'customers:customer_list' %}">
+                    <i class="bi bi-journal-text"></i> Cuentas Corrientes
+                </a>
+
+                <a class="nav-link {% if 'products' in request.path and 'category' not in request.path and 'purchase' not in request.path %}active{% endif %}" href="{% url 'products:product_list' %}">
+                    <i class="bi bi-archive"></i> Inventario de Artículos
+                </a>
+
                 <a class="nav-link {% if 'categories' in request.path %}active{% endif %}" href="{% url 'products:category_list' %}">
                     <i class="bi bi-tags"></i> Categorías
                 </a>
-                <a class="nav-link {% if 'customers' in request.path %}active{% endif %}" href="{% url 'customers:customer_list' %}">
-                    <i class="bi bi-people"></i> Clientes
-                </a>
+
                 <a class="nav-link {% if 'suppliers' in request.path %}active{% endif %}" href="{% url 'suppliers:supplier_list' %}">
                     <i class="bi bi-truck"></i> Proveedores
                 </a>
-                <a class="nav-link {% if 'purchases' in request.path %}active{% endif %}" href="{% url 'products:purchase_list' %}">
-                    <i class="bi bi-bag-plus"></i> Compras
-                </a>
-                <a class="nav-link {% if 'purchase-orders' in request.path %}active{% endif %}" href="{% url 'products:purchase_order_list' %}">
-                    <i class="bi bi-list-check"></i> Órdenes de Compra
-                </a>
-                <a class="nav-link {% if 'supplier-ranking' in request.path %}active{% endif %}" href="{% url 'products:supplier_ranking' %}">
-                    <i class="bi bi-trophy"></i> Ranking Proveedores
-                </a>
-                {% endif %}
 
-                <a class="nav-link {% if 'finance' in request.path %}active{% endif %}" href="{% url 'finance:cash_dashboard' %}">
-                    <i class="bi bi-cash-coin"></i> Caja
+                <a class="nav-link {% if 'purchase' in request.path %}active{% endif %}" href="{% url 'products:purchase_list' %}">
+                    <i class="bi bi-bag-plus"></i> Compras y OC
                 </a>
 
-                <!-- Sección Administración -->
-                {% if user.is_superuser or user.groups.all.0.name == 'Administradores' %}
-                <div class="px-4 py-2 mt-4 text-uppercase small opacity-50 fw-bold text-white border-top border-white border-opacity-10 pt-4">Administración</div>
-                <a class="nav-link {% if 'admin-tools' in request.path %}active{% endif %}" href="{% url 'products:admin_tools' %}">
-                    <i class="bi bi-shield-lock me-3"></i> Herramientas
-                </a>
+                {% if user.is_superuser or user.is_staff %}
+                <div class="px-4 py-2 mt-4 text-uppercase text-white-50 fw-bold" style="font-size: 0.65rem; letter-spacing: 1px;">Control y Reportes</div>
+
                 <a class="nav-link {% if 'bi' in request.path %}active{% endif %}" href="{% url 'products:bi_dashboard' %}">
-                    <i class="bi bi-graph-up me-3"></i> Inteligencia (BI)
+                    <i class="bi bi-graph-up"></i> Informes / BI
                 </a>
+
+                <a class="nav-link {% if 'fiscal' in request.path %}active{% endif %}" href="{% url 'finance:fiscal_reports' %}">
+                    <i class="bi bi-file-earmark-bar-graph"></i> Reportes Fiscales
+                </a>
+
+                <a class="nav-link {% if 'admin-tools' in request.path %}active{% endif %}" href="{% url 'products:admin_tools' %}">
+                    <i class="bi bi-shield-lock"></i> Herramientas de Sistema
+                </a>
+
+                <a class="nav-link" href="/admin/" target="_blank">
+                    <i class="bi bi-gear"></i> Configuración Avanzada
+                </a>
+
                 <a class="nav-link" href="{% url 'products:download_backup' %}">
-                    <i class="bi bi-database-down me-3"></i> Descargar Backup
+                    <i class="bi bi-database-down"></i> Copia de Seguridad
                 </a>
                 {% endif %}
-
             </nav>
 
-            <!-- Modo Oscuro en Sidebar -->
-            <div class="px-4 py-3 border-top border-white border-opacity-10">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="darkModeSidebar" onchange="toggleDarkMode()">
-                    <label class="form-check-label text-white small" for="darkModeSidebar">Modo Oscuro</label>
+            <!-- Footer Sidebar (Fijo abajo) -->
+            <div class="mt-auto flex-shrink-0 border-top border-white border-opacity-10">
+                <div class="px-4 py-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="darkModeSidebar" onchange="toggleDarkMode()">
+                        <label class="form-check-label text-white small" for="darkModeSidebar">Modo Oscuro</label>
+                    </div>
                 </div>
-            </div>
-
-            <!-- Footer Sidebar -->
-            <div class="p-3 mt-auto flex-shrink-0">
-                <form action="{% url 'logout' %}" method="post">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-light w-100 rounded-pill py-2 small shadow-sm">
-                        <i class="bi bi-box-arrow-left me-2"></i>Cerrar Sesión
-                    </button>
-                </form>
+                <div class="p-3 pt-0">
+                    <form action="{% url 'logout' %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-light w-100 rounded-pill py-2 small shadow-sm">
+                            <i class="bi bi-box-arrow-left me-2"></i>Cerrar Sesión
+                        </button>
+                    </form>
+                </div>
             </div>
         </aside>
         {% endif %}
@@ -294,7 +285,7 @@
         <div id="page-content-wrapper">
             {% if user.is_authenticated %}
             <!-- Topbar -->
-            <nav class="navbar-main flex-shrink-0">
+            <nav class="navbar-main flex-shrink-0 d-flex align-items-center">
                 <div class="d-flex align-items-center">
                     <button class="btn btn-link p-0 me-3 text-body fs-4 shadow-none" id="menu-toggle">
                         <i class="bi bi-list"></i>
@@ -310,13 +301,14 @@
                     </div>
                 </div>
 
-                <div class="d-flex align-items-center">
+                <!-- NAVBAR DERECHA -->
+                <div class="d-flex align-items-center ms-auto">
                     <!-- Configuración / Apariencia -->
                     <div class="dropdown me-3">
                         <button class="btn btn-secondary bg-body-secondary border-0 rounded-circle p-2 shadow-sm text-body" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-palette"></i>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end border-0 shadow mt-2 p-3" style="min-width: 220px; border-radius: 15px;">
+                        <ul class="dropdown-menu dropdown-menu-end border-0 shadow mt-2 p-3" style="min-width: 280px; border-radius: 15px;">
                             <li class="mb-4">
                                 <label class="small fw-bold mb-2 d-block text-uppercase opacity-50">Modo de Pantalla</label>
                                 <div class="row g-2">
@@ -335,25 +327,29 @@
                             <li>
                                 <label class="small fw-bold mb-2 d-block text-uppercase opacity-50">Color de Acento</label>
                                 <div class="d-flex gap-2 flex-wrap justify-content-center bg-body-tertiary p-2 rounded-3">
-                                    <span class="color-dot" style="background: #4318ff;" onclick="setPrimaryColor('#4318ff', '67, 24, 255', this)"></span>
-                                    <span class="color-dot" style="background: #0d6efd;" onclick="setPrimaryColor('#0d6efd', '13, 110, 253', this)"></span>
-                                    <span class="color-dot" style="background: #6f42c1;" onclick="setPrimaryColor('#6f42c1', '111, 66, 193', this)"></span>
-                                    <span class="color-dot" style="background: #d63384;" onclick="setPrimaryColor('#d63384', '214, 51, 132', this)"></span>
-                                    <span class="color-dot" style="background: #198754;" onclick="setPrimaryColor('#198754', '25, 135, 84', this)"></span>
-                                    <span class="color-dot" style="background: #fd7e14;" onclick="setPrimaryColor('#fd7e14', '253, 126, 20', this)"></span>
-                                    <span class="color-dot" style="background: #20c997;" onclick="setPrimaryColor('#20c997', '32, 201, 151', this)"></span>
-                                    <span class="color-dot" style="background: #ffc107;" onclick="setPrimaryColor('#ffc107', '255, 193, 7', this)"></span>
+                                    <span class="color-dot" style="background: #007bff;" onclick="setPrimaryColor('#007bff', '0, 123, 255', this)"></span>
+                                    <span class="color-dot" style="background: #2ecc71;" onclick="setPrimaryColor('#2ecc71', '46, 204, 113', this)"></span>
+                                    <span class="color-dot" style="background: #8e44ad;" onclick="setPrimaryColor('#8e44ad', '142, 68, 173', this)"></span>
+                                    <span class="color-dot" style="background: #e67e22;" onclick="setPrimaryColor('#e67e22', '230, 126, 34', this)"></span>
+                                    <span class="color-dot" style="background: #e74c3c;" onclick="setPrimaryColor('#e74c3c', '231, 76, 60', this)"></span>
+                                    <span class="color-dot" style="background: #1abc9c;" onclick="setPrimaryColor('#1abc9c', '26, 188, 156', this)"></span>
+                                    <span class="color-dot" style="background: #fd79a8;" onclick="setPrimaryColor('#fd79a8', '253, 121, 168', this)"></span>
+                                    <span class="color-dot" style="background: #f1c40f;" onclick="setPrimaryColor('#f1c40f', '241, 196, 15', this)"></span>
+                                    <span class="color-dot" style="background: #2d3436;" onclick="setPrimaryColor('#2d3436', '45, 52, 54', this)"></span>
+                                    <span class="color-dot" style="background: #3f51b5;" onclick="setPrimaryColor('#3f51b5', '63, 81, 181', this)"></span>
                                 </div>
                             </li>
                         </ul>
                     </div>
 
-                    <div class="d-flex align-items-center bg-body-secondary rounded-pill px-3 py-1 shadow-sm border border-light-subtle">
-                        <i class="bi bi-person-circle text-primary me-2"></i>
-                        <span class="small fw-bold text-body">{{ user.username|default:"Usuario" }}</span>
-                    </div>
+                    <!-- Usuario -->
+                    <a href="/admin/" class="d-flex align-items-center bg-body-secondary rounded-pill px-3 py-1 shadow-sm border border-light-subtle text-decoration-none">
+                        <i class="bi bi-person-circle text-warning me-2 fs-5"></i>
+                        <span class="small fw-bold text-body">{{ user.username|default:"admin" }}</span>
+                    </a>
                 </div>
             </nav>
+
             {% endif %}
 
             <!-- Main Content Container -->

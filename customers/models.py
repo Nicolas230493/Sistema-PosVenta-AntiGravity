@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from finance.models import PaymentMethod
 
 class Customer(models.Model):
     full_name = models.CharField(max_length=255, verbose_name="Nombre Completo")
@@ -9,6 +10,7 @@ class Customer(models.Model):
     address = models.CharField(max_length=255, null=True, blank=True, verbose_name="Dirección")
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Saldo Deudor")
     points = models.IntegerField(default=0, validators=[MinValueValidator(0)], verbose_name="Puntos Acumulados")
+    limite_credito = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Límite de Crédito")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Registro")
 
     def __str__(self):
@@ -20,15 +22,10 @@ class Customer(models.Model):
         ordering = ['full_name']
 
 class Payment(models.Model):
-    PAYMENT_METHODS = (
-        ('CASH', 'Efectivo'),
-        ('DEBIT', 'Tarjeta de Débito'),
-        ('CREDIT', 'Tarjeta de Crédito'),
-        ('TRANS', 'Transferencia'),
-    )
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='payments', verbose_name="Cliente")
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Monto Pagado")
-    payment_method = models.CharField(max_length=10, choices=PAYMENT_METHODS, default='CASH', verbose_name="Método de Pago")
+    payment_method = models.ForeignKey(PaymentMethod, on_delete=models.PROTECT, null=True, verbose_name="Método de Pago")
+    payment_method_old = models.CharField(max_length=10, null=True, blank=True) # Temporal
     date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
     notes = models.CharField(max_length=255, blank=True, null=True, verbose_name="Notas")
     user = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, verbose_name="Registrado por")

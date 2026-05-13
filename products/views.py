@@ -49,10 +49,17 @@ def category_update(request, pk):
         form = CategoryForm(instance=category)
     return render(request, 'products/category_form.html', {'form': form, 'title': 'Editar Categoría'})
 
+from core.models import ActivityLog
+
 @staff_member_required
 def category_delete(request, pk):
     category = get_object_or_404(Category, pk=pk)
     if request.method == 'POST':
+        ActivityLog.objects.create(
+            user=request.user,
+            action=f"Categoría eliminada: {category.name}",
+            module="Productos"
+        )
         category.delete()
         messages.success(request, "Categoría eliminada.")
         return redirect('products:category_list')
@@ -117,6 +124,11 @@ def product_update(request, pk):
 def product_delete(request, pk):
     product = get_object_or_404(Product, pk=pk)
     if request.method == 'POST':
+        ActivityLog.objects.create(
+            user=request.user,
+            action=f"Producto eliminado: {product.name} (SKU: {product.sku})",
+            module="Productos"
+        )
         product.delete()
         messages.success(request, f"Producto '{product.name}' eliminado exitosamente.")
         return redirect('products:product_list')
@@ -144,11 +156,22 @@ def bulk_price_update(request):
     if request.method == 'POST':
         category_id = request.POST.get('category')
         percentage = float(request.POST.get('percentage', 0))
+        
+        target = "Todos los productos"
         if category_id:
+            category = Category.objects.get(id=category_id)
+            target = f"Categoría: {category.name}"
             products = Product.objects.filter(category_id=category_id)
             products.update(price=F('price') * (1 + (percentage / 100)))
         else:
             Product.objects.all().update(price=F('price') * (1 + (percentage / 100)))
+        
+        ActivityLog.objects.create(
+            user=request.user,
+            action=f"Actualización masiva de precios ({percentage}%)",
+            module="Productos",
+            details=f"Target: {target}"
+        )
         messages.success(request, "Precios actualizados.")
         return redirect('products:admin_tools')
     categories = Category.objects.all()
@@ -193,12 +216,39 @@ def business_intelligence(request):
     # 4. Ranking de Proveedores (Por inversión en compras)
     supplier_ranking = InventoryMovement.objects.filter(movement_type='IN').values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
 
+    # 5. Ganancia Neta (Ventas - Costos - Gastos)
+    # Nota: Gastos son de CashSession (finance)
+    from finance.models import CashExpense
+    from sales.models import Sale, SaleDetail
+    
+    total_revenue = Sale.objects.aggregate(total=Sum('total_amount'))['total'] or 0
+    total_cost = SaleDetail.objects.aggregate(total=Sum(F('quantity') * F('cost_price_at_sale')))['total'] or 0
+    total_expenses = CashExpense.objects.aggregate(total=Sum('amount'))['total'] or 0
+    
+    # 6. Impacto de Marketing
+    total_promo_discounts = Sale.objects.aggregate(total=Sum('promo_discount'))['total'] or 0
+    total_points_discounts = Sale.objects.aggregate(total=Sum('points_discount'))['total'] or 0
+    total_marketing_investment = total_promo_discounts + total_points_discounts
+
+    net_profit = total_revenue - total_cost - total_expenses
+
     context = {
         'sales_hour_data': list(sales_by_hour), 
         'top_products': list(top_products),
         'dead_products': dead_products[:15],
         'total_dead_capital': total_dead_capital,
-        'supplier_ranking': supplier_ranking
+        'supplier_ranking': supplier_ranking,
+        'net_profit_data': {
+            'revenue': total_revenue,
+            'cost': total_cost,
+            'expenses': total_expenses,
+            'profit': net_profit
+        },
+        'marketing_impact': {
+            'promo_discounts': total_promo_discounts,
+            'points_discounts': total_points_discounts,
+            'total_investment': total_marketing_investment
+        }
     }
     return render(request, 'products/bi_dashboard.html', context)
 
@@ -264,6 +314,71 @@ def order_assistant(request):
         return redirect('products:purchase_order_list')
 
     return render(request, 'products/order_assistant.html', {'low_stock_products': low_stock_products})
+
+from .utils import generate_product_labels
+from io import BytesIO
+
+@staff_member_required
+def export_labels(request):
+    product_ids = request.GET.getlist('products')
+    if not product_ids:
+        messages.error(request, "Debe seleccionar al menos un producto.")
+        return redirect('products:product_list')
+    
+    products = Product.objects.filter(id__in=product_ids)
+    buffer = BytesIO()
+    generate_product_labels(buffer, products)
+    buffer.seek(0)
+    
+    return FileResponse(buffer, as_attachment=False, filename="Etiquetas_Productos.pdf")
+
+@staff_member_required
+def update_purchase_order_status(request, pk):
+    order = get_object_or_404(PurchaseOrder, pk=pk)
+    new_status = request.POST.get('status')
+    
+    if new_status == 'RECEIVED' and order.status != 'RECEIVED':
+        with transaction.atomic():
+            for detail in order.details.all():
+                product = detail.product
+                product.stock += detail.quantity
+                product.cost_price = detail.estimated_cost
+                product.save()
+                
+                InventoryMovement.objects.create(
+                    product=product,
+                    quantity=detail.quantity,
+                    movement_type='IN',
+                    reference=f"Orden Compra #{order.id}",
+                    user=request.user
+                )
+            order.status = 'RECEIVED'
+            order.save()
+            messages.success(request, f"Orden #{order.id} recibida. Stock actualizado.")
+            
+    elif new_status == 'PAID' and order.status == 'RECEIVED':
+        # Impactar en caja (egreso)
+        from finance.models import CashSession, CashExpense
+        session = CashSession.objects.filter(is_open=True, user=request.user).first()
+        if not session:
+            messages.error(request, "Debes tener una caja abierta para marcar como PAGADA e impactar el egreso.")
+            return redirect('products:purchase_order_list')
+            
+        with transaction.atomic():
+            CashExpense.objects.create(
+                session=session,
+                amount=order.total_amount,
+                description=f"Pago OC #{order.id} - {order.supplier.name}"
+            )
+            order.status = 'PAID'
+            order.save()
+            messages.success(request, f"Orden #{order.id} pagada e impactada en caja.")
+    else:
+        order.status = new_status
+        order.save()
+        messages.success(request, f"Estado de Orden #{order.id} actualizado a {order.get_status_display()}.")
+        
+    return redirect('products:purchase_order_list')
 
 @staff_member_required
 def purchase_order_list(request):
@@ -374,21 +489,29 @@ def purchase_create(request):
     return render(request, 'products/purchase_form.html', {'suppliers': suppliers, 'products': products})
 
 @login_required
-def stock_entry(request):
+def stock_entry_scanner(request):
     if request.method == 'POST':
-        form = InventoryMovementForm(request.POST)
-        if form.is_valid():
-            movement = form.save(commit=False)
-            movement.user = request.user
-            movement.movement_type = 'IN'
-            product = movement.product
-            product.stock += movement.quantity
-            product.cost_price = movement.cost_price
-            product.price = movement.sale_price
-            product.save()
-            movement.save()
-            messages.success(request, "Stock actualizado.")
-            return redirect('products:inventory_history')
-    else:
-        form = InventoryMovementForm()
-    return render(request, 'products/stock_entry.html', {'form': form, 'title': 'Entrada de Stock'})
+        barcode = request.POST.get('barcode')
+        qty = int(request.POST.get('quantity', 1))
+        
+        product = Product.objects.filter(Q(barcode=barcode) | Q(sku=barcode)).first()
+        
+        if product:
+            with transaction.atomic():
+                product.stock += qty
+                product.save()
+                
+                InventoryMovement.objects.create(
+                    product=product,
+                    quantity=qty,
+                    movement_type='IN',
+                    reference="Ingreso por Escáner",
+                    user=request.user
+                )
+            messages.success(request, f"Se sumaron {qty} unidades a {product.name}. Nuevo stock: {product.stock}")
+        else:
+            messages.error(request, f"Producto no encontrado: {barcode}")
+            
+        return redirect('products:stock_entry_scanner')
+        
+    return render(request, 'products/stock_entry_scanner.html')

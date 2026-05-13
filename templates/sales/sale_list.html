@@ -39,23 +39,27 @@
                 </td>
                 <td>
                     <span class="small">
-                        {% if sale.payment_method == 'CASH' %}
-                            <i class="bi bi-cash me-1 text-success"></i>
-                        {% elif sale.payment_method == 'DEBIT' or sale.payment_method == 'CREDIT' %}
+                        {% if sale.payment_method.is_digital %}
                             <i class="bi bi-credit-card me-1 text-primary"></i>
-                        {% elif sale.payment_method == 'TRANS' %}
-                            <i class="bi bi-qr-code-scan me-1 text-info"></i>
+                        {% elif sale.payment_method.name == 'Efectivo' %}
+                            <i class="bi bi-cash me-1 text-success"></i>
                         {% else %}
                             <i class="bi bi-journal-text me-1 text-warning"></i>
                         {% endif %}
-                        {{ sale.get_payment_method_display }}
+                        {{ sale.payment_method.name }}
                     </span>
                 </td>
                 <td class="fw-bold text-primary">${{ sale.total_amount }}</td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
+                        <a href="{% url 'sales:sale_return' pk=sale.pk %}" class="btn btn-outline-warning btn-sm border" title="Procesar Devolución">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </a>
                         <a href="{% url 'sales:export_sale_pdf' pk=sale.pk %}" class="btn btn-outline-danger btn-sm border" title="Descargar PDF">
                             <i class="bi bi-file-pdf"></i>
+                        </a>
+                        <a href="{% url 'sales:whatsapp_ticket' pk=sale.pk %}" class="btn btn-outline-success btn-sm border" title="Enviar WhatsApp" target="_blank">
+                            <i class="bi bi-whatsapp"></i>
                         </a>
                         <a href="{% url 'sales:export_thermal_ticket' pk=sale.pk %}" class="btn btn-outline-secondary btn-sm border px-3" target="_blank">
                             <i class="bi bi-printer me-1"></i> Reimprimir
