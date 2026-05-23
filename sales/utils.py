@@ -114,7 +114,7 @@ def generate_thermal_ticket(sale):
     
     y -= 6*mm
     p.setFont("Helvetica", 8)
-    p.drawString(5*mm, y, f"Método: {sale.get_payment_method_display()}")
+    p.drawString(5*mm, y, f"Método: {sale.payment_method.name if sale.payment_method else '---'}")
     
     y -= 10*mm
     p.setFont("Helvetica-Bold", 9)

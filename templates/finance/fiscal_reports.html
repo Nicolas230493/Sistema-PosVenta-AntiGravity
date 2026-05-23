@@ -39,9 +39,10 @@
 <div class="row">
     <!-- IVA Ventas -->
     <div class="col-lg-12 mb-4">
-        <div class="card border-0 shadow-sm rounded-4 h-100">
-            <div class="card-header bg-transparent border-0 py-3 px-4">
-                <h5 class="fw-bold mb-0">Libro IVA Ventas</h5>
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-transparent border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-primary">Libro IVA Ventas (Débito Fiscal)</h5>
+                <span class="badge bg-primary rounded-pill px-3">Mes: {{ selected_month }}/{{ selected_year }}</span>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
@@ -50,9 +51,9 @@
                             <th class="ps-4">Fecha</th>
                             <th>Ticket</th>
                             <th>Cliente</th>
-                            <th class="text-end">Neto</th>
-                            <th class="text-end">IVA</th>
-                            <th class="text-end pe-4">Total</th>
+                            <th class="text-end">Neto Gravado</th>
+                            <th class="text-end">IVA Débito</th>
+                            <th class="text-end pe-4">Total Facturado</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -61,12 +62,49 @@
                             <td class="ps-4 small">{{ s.date|date:"d/m/Y" }}</td>
                             <td>#{{ s.id }}</td>
                             <td class="small">{{ s.customer.full_name|default:"Consumidor Final" }}</td>
-                            <td class="text-end">${{ s.total_amount|add:s.tax_amount }}</td> <!-- Simplificación visual -->
-                            <td class="text-end text-primary">${{ s.tax_amount }}</td>
-                            <td class="text-end pe-4 fw-bold">${{ s.total_amount }}</td>
+                            <td class="text-end fw-medium">${{ s.net_amount|floatformat:2 }}</td>
+                            <td class="text-end text-primary">${{ s.tax_amount|floatformat:2 }}</td>
+                            <td class="text-end pe-4 fw-bold">${{ s.total_amount|floatformat:2 }}</td>
                         </tr>
                         {% empty %}
                         <tr><td colspan="6" class="text-center py-5 opacity-50">Sin ventas en este periodo.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- IVA Compras -->
+    <div class="col-lg-12 mb-4">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-transparent border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-success">Libro IVA Compras (Crédito Fiscal)</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr class="small text-uppercase opacity-75">
+                            <th class="ps-4">Fecha</th>
+                            <th>Proveedor</th>
+                            <th>Factura</th>
+                            <th class="text-end">Neto Gravado</th>
+                            <th class="text-end">IVA Crédito</th>
+                            <th class="text-end pe-4">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in purchases %}
+                        <tr>
+                            <td class="ps-4 small">{{ p.date|date:"d/m/Y" }}</td>
+                            <td class="fw-medium small">{{ p.supplier.name }}</td>
+                            <td class="small text-muted">{{ p.invoice_number|default:"---" }}</td>
+                            <td class="text-end">${{ p.net_amount|floatformat:2 }}</td>
+                            <td class="text-end text-success">${{ p.tax_amount|floatformat:2 }}</td>
+                            <td class="text-end pe-4 fw-bold">${{ p.total_amount|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center py-5 opacity-50">Sin compras registradas en este periodo.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

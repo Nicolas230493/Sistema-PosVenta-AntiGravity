@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail
 from .forms import ProductForm, InventoryMovementForm, CategoryForm
-from sales.models import Sale, SaleDetail
+from sales.models import Sale, SaleDetail, SaleReturn, SaleReturnDetail
 from suppliers.models import Supplier
 from pos_system.settings import BASE_DIR
 
@@ -200,39 +200,67 @@ def business_intelligence(request):
         messages.error(request, "No tenés permiso para acceder a Inteligencia de Ventas.")
         return redirect('dashboard')
 
+    period = request.GET.get('period', 'month')
+    start_date = None
+    end_date = timezone.now()
+
+    if period == 'today':
+        start_date = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == 'week':
+        start_date = timezone.now() - timedelta(days=7)
+    elif period == 'month':
+        start_date = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == 'all':
+        start_date = None
+
+    # Filtros base
+    sale_filters = Q()
+    expense_filters = Q()
+    return_filters = Q()
+    movement_filters = Q(movement_type='IN')
+
+    if start_date:
+        sale_filters &= Q(date__gte=start_date)
+        expense_filters &= Q(date__gte=start_date)
+        return_filters &= Q(date__gte=start_date)
+        movement_filters &= Q(product__inventorymovement__date__gte=start_date) # Ajuste para ranking de proveedores
+
     # 1. Gráfico de Horas Pico
-    sales_by_hour = Sale.objects.annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
+    sales_by_hour = Sale.objects.filter(sale_filters).annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
 
     # 2. Top Productos (Más vendidos)
-    top_products = SaleDetail.objects.values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
+    top_products = SaleDetail.objects.filter(sale__date__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
 
     # 3. Reporte de Productos Muertos (>60 días sin ventas)
+    # Excluimos productos creados en los últimos 30 días para no penalizar stock nuevo
+    thirty_days_ago = timezone.now() - timedelta(days=30)
     sixty_days_ago = timezone.now() - timedelta(days=60)
+    
     sold_ids = SaleDetail.objects.filter(sale__date__gte=sixty_days_ago).values_list('product_id', flat=True)
-    dead_products = Product.objects.exclude(id__in=sold_ids).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
+    dead_products = Product.objects.exclude(id__in=sold_ids).filter(created_at__lt=thirty_days_ago, stock__gt=0).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
 
     total_dead_capital = dead_products.aggregate(total=Sum(F('stock') * F('cost_price')))['total'] or 0
 
     # 4. Ranking de Proveedores (Por inversión en compras)
-    supplier_ranking = InventoryMovement.objects.filter(movement_type='IN').values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
+    supplier_ranking = InventoryMovement.objects.filter(movement_filters).values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
 
-    # 5. Ganancia Neta (Ventas - Costos - Gastos)
-    # Nota: Gastos son de CashSession (finance)
+    # 5. Ganancia Neta (Ventas - Costos - Gastos - Devoluciones)
     from finance.models import CashExpense
-    from sales.models import Sale, SaleDetail
-    
-    total_revenue = Sale.objects.aggregate(total=Sum('total_amount'))['total'] or 0
-    total_cost = SaleDetail.objects.aggregate(total=Sum(F('quantity') * F('cost_price_at_sale')))['total'] or 0
-    total_expenses = CashExpense.objects.aggregate(total=Sum('amount'))['total'] or 0
+
+    total_revenue = Sale.objects.filter(sale_filters).aggregate(total=Sum('total_amount'))['total'] or 0
+    total_cost = SaleDetail.objects.filter(sale__date__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).aggregate(total=Sum(F('quantity') * F('cost_price_at_sale')))['total'] or 0
+    total_expenses = CashExpense.objects.filter(expense_filters).aggregate(total=Sum('amount'))['total'] or 0
+    total_returns = SaleReturn.objects.filter(return_filters).aggregate(total=Sum('total_amount'))['total'] or 0
     
     # 6. Impacto de Marketing
-    total_promo_discounts = Sale.objects.aggregate(total=Sum('promo_discount'))['total'] or 0
-    total_points_discounts = Sale.objects.aggregate(total=Sum('points_discount'))['total'] or 0
+    total_promo_discounts = Sale.objects.filter(sale_filters).aggregate(total=Sum('promo_discount'))['total'] or 0
+    total_points_discounts = Sale.objects.filter(sale_filters).aggregate(total=Sum('points_discount'))['total'] or 0
     total_marketing_investment = total_promo_discounts + total_points_discounts
 
-    net_profit = total_revenue - total_cost - total_expenses
+    net_profit = total_revenue - total_cost - total_expenses - total_returns
 
     context = {
+        'period': period,
         'sales_hour_data': list(sales_by_hour), 
         'top_products': list(top_products),
         'dead_products': dead_products[:15],
@@ -242,6 +270,7 @@ def business_intelligence(request):
             'revenue': total_revenue,
             'cost': total_cost,
             'expenses': total_expenses,
+            'returns': total_returns,
             'profit': net_profit
         },
         'marketing_impact': {
@@ -441,15 +470,56 @@ def import_inventory_excel(request):
         file = request.FILES['excel_file']
         try:
             df = pd.read_excel(file)
+            
+            # Mapeo de nombres de columnas (soporta tanto nombres de exportación como amigables)
+            column_mapping = {
+                'Nombre': 'name', 'name': 'name',
+                'SKU': 'sku', 'sku': 'sku',
+                'P. Venta': 'price', 'price': 'price',
+                'P. Costo': 'cost_price', 'cost_price': 'cost_price',
+                'Stock': 'stock', 'stock': 'stock',
+                'Stock Minimo': 'min_stock', 'min_stock': 'min_stock',
+                'Proveedor': 'supplier', 'supplier__name': 'supplier',
+                'Categoria': 'category', 'category__name': 'category',
+                'Descripcion': 'description', 'description': 'description'
+            }
+            
+            # Normalizar columnas del DataFrame
+            df.columns = [column_mapping.get(c, c) for c in df.columns]
+            
+            imported_count = 0
             for _, row in df.iterrows():
-                supplier_name = row.get('Proveedor')
+                # Buscar o crear proveedor
                 supplier = None
-                if pd.notna(supplier_name):
-                    supplier, _ = Supplier.objects.get_or_create(name=supplier_name)
-                Product.objects.update_or_create(name=row['Nombre'], defaults={'price': row['P. Venta'], 'stock': row['Stock'], 'supplier': supplier})
-            messages.success(request, "Importación completada.")
+                if 'supplier' in row and pd.notna(row['supplier']):
+                    supplier, _ = Supplier.objects.get_or_create(name=str(row['supplier']))
+                
+                # Buscar o crear categoría
+                category = None
+                if 'category' in row and pd.notna(row['category']):
+                    category, _ = Category.objects.get_or_create(name=str(row['category']))
+
+                # Preparar datos
+                defaults = {}
+                if 'price' in row: defaults['price'] = Decimal(str(row['price']))
+                if 'cost_price' in row: defaults['cost_price'] = Decimal(str(row['cost_price']))
+                if 'stock' in row: defaults['stock'] = int(row['stock'])
+                if 'min_stock' in row: defaults['min_stock'] = int(row['min_stock'])
+                if 'description' in row: defaults['description'] = str(row['description'])
+                if supplier: defaults['supplier'] = supplier
+                if category: defaults['category'] = category
+
+                # Usar SKU como llave principal si existe, si no, el nombre
+                if 'sku' in row and pd.notna(row['sku']):
+                    Product.objects.update_or_create(sku=str(row['sku']), defaults={'name': row['name'], **defaults})
+                else:
+                    Product.objects.update_or_create(name=row['name'], defaults=defaults)
+                
+                imported_count += 1
+                
+            messages.success(request, f"Importación completada: {imported_count} productos procesados.")
         except Exception as e:
-            messages.error(request, f"Error: {str(e)}")
+            messages.error(request, f"Error al importar: {str(e)}")
     return redirect('products:product_list')
 
 @login_required

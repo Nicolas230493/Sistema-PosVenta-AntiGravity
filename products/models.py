@@ -155,6 +155,15 @@ class Purchase(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total Compra", default=0)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Registrado por")
 
+    @property
+    def tax_amount(self):
+        # Asumiendo 21% si no está desglosado en la compra
+        return self.total_amount - (self.total_amount / Decimal('1.21'))
+    
+    @property
+    def net_amount(self):
+        return self.total_amount - self.tax_amount
+
     def __str__(self):
         return f"Compra #{self.id} - {self.supplier.name}"
 

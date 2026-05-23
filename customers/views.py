@@ -31,7 +31,7 @@ def export_statement_pdf(request, pk):
     for p in payments:
         transactions.append({
             'date': p.date,
-            'concept': f"Pago #{p.id} ({p.get_payment_method_display()})",
+            'concept': f"Pago #{p.id} ({p.payment_method.name if p.payment_method else '---'})",
             'type': 'PAYMENT',
             'amount': p.amount
         })

@@ -18,6 +18,10 @@ class Sale(models.Model):
     payment_method = models.ForeignKey(PaymentMethod, on_delete=models.PROTECT, null=True, verbose_name="Método de Pago")
     payment_method_old = models.CharField(max_length=10, null=True, blank=True) # Temporal para migración
 
+    @property
+    def net_amount(self):
+        return self.total_amount - self.tax_amount
+
     def __str__(self):
         return f"Venta #{self.id}"
 
