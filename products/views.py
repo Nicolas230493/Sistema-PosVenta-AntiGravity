@@ -242,6 +242,11 @@ def business_intelligence(request):
     total_dead_capital = dead_products.aggregate(total=Sum(F('stock') * F('cost_price')))['total'] or 0
 
     # 4. Ranking de Proveedores (Por inversión en compras)
+    # Ajuste: Filtramos directamente por el campo 'date' del modelo InventoryMovement
+    movement_filters = Q(movement_type='IN')
+    if start_date:
+        movement_filters &= Q(date__gte=start_date)
+    
     supplier_ranking = InventoryMovement.objects.filter(movement_filters).values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
 
     # 5. Ganancia Neta (Ventas - Costos - Gastos - Devoluciones)
