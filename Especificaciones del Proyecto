@@ -1,0 +1,114 @@
+Este es un análisis técnico y detallado del proyecto "Sistema POSVenta Antigravity", un sistema de punto de venta (POS) y gestión comercial robusto construido sobre
+  Django 5.x.
+
+  ---
+
+  1. Stack Tecnológico y Arquitectura General
+
+   * Framework Principal: Django 5.x (Python) con arquitectura MVT (Model-View-Template).
+   * Base de Datos: SQLite en desarrollo (con soporte planificado para PostgreSQL en producción según el plan de estabilización).
+   * Librerías Clave:
+     * reportlab: Generación dinámica de reportes y tickets de venta en formato PDF.
+     * pandas & openpyxl: Procesamiento de datos e importación/exportación de reportes a Excel.
+     * django-widget-tweaks: Personalización de formularios Bootstrap en plantillas.
+     * python-dotenv: Gestión de variables de entorno y secretos de configuración.
+   * Frontend: Django Templates integrados con Bootstrap, combinados con AJAX para interacciones en tiempo real en la pantalla de ventas (POS) sin recargar la página.
+   * Seguridad y Control de Acceso (RBAC): Middleware personalizado (RoleAccessMiddleware) que restringe el acceso a módulos administrativos en base al rol del usuario
+     (ej. Cajeros vs. Encargados vs. Administradores).
+
+  ---
+
+  2. Estructura de Aplicaciones y Modelos de Datos
+
+  El proyecto se divide en 6 aplicaciones de Django altamente interconectadas:
+
+  A. core (Núcleo y Auditoría)
+  Orquesta el acceso general, las búsquedas globales del sistema, el panel de control analítico principal y el registro de auditoría.
+   * ActivityLog: Registra acciones críticas del usuario (quién, qué, cuándo, dirección IP) para auditoría de seguridad.
+   * RoleAccessMiddleware: Intercepta las solicitudes para asegurar que los cajeros y supervisores solo accedan a las rutas permitidas.
+
+  B. products (Catálogo e Inventario)
+  Soporta toda la lógica de los artículos en venta, el control de stock y compras a proveedores.
+   * Product: Define cada artículo, incluyendo SKU, código de barras (barcode), precio de costo (cost_price), precio de venta (price), stock actual, stock mínimo
+     (min_stock), unidad de medida (unit: kg, lt, unidades) y tasa impositiva (tax_rate).
+   * InventoryMovement: Bitácora de movimientos de stock para trazabilidad total (IN por compra, OUT por venta, ADJ por ajuste manual o mermas).
+   * StockLoss (Mermas): Registra productos dañados o vencidos restándolos del inventario con su respectivo motivo.
+   * PriceList & ProductPrice: Permite manejar múltiples listas de precios simultáneas (ej. Minorista, Mayorista, Promocional).
+   * PriceLog: Historial de cambios de precio para análisis de inflación y márgenes.
+   * Purchase & PurchaseDetail: Registro de facturas de compra de mercadería recibida que incrementa automáticamente el inventario.
+   * PurchaseOrder: Órdenes de compra previas para la gestión de suministros.
+
+  C. sales (Punto de Venta y Facturación)
+  Administra el proceso de checkout en el POS, el motor de promociones y las devoluciones.
+   * Sale & SaleDetail: Almacenan la cabecera del ticket y sus líneas de detalle. Guarda valores históricos como el precio de costo al momento de la venta
+     (cost_price_at_sale) para calcular la ganancia neta real de forma precisa.
+   * Promotion: Motor de reglas para aplicar descuentos automatizados basados en condiciones (ej. descuentos porcentuales, montos fijos, promociones activas en fechas
+     específicas).
+   * SaleReturn & SaleReturnDetail: Registra las devoluciones de artículos. Requiere autorización de supervisor, devuelve los productos al stock y gestiona la
+     devolución del dinero.
+
+  D. customers (Clientes y Cuentas Corrientes)
+  Gestiona la fidelización y las ventas a crédito ("fiado").
+   * Customer: Información de contacto, saldo actual acumulado (balance), límite de crédito permitido (limite_credito) y puntos de fidelidad acumulados (points).
+   * CurrentAccount: Libro contable auxiliar (cuenta corriente) que registra el historial detallado de cargos (por compras a crédito) y abonos del cliente.
+   * Payment: Registra los pagos realizados por el cliente para amortizar o cancelar su deuda corriente.
+
+  E. finance (Caja y Medios de Pago)
+  Controla el flujo de dinero físico y digital diario.
+   * CashSession (Arqueo/Sesión de Caja): Controla las aperturas y cierres de caja. Registra el saldo inicial, las ventas en efectivo, ventas digitales, gastos
+     registrados, y calcula la diferencia de caja esperada vs. real al cerrar el turno.
+   * CashExpense: Registro de egresos o retiros de dinero de la caja diaria para gastos menores (ej. pago de delivery, insumos de limpieza).
+   * PaymentMethod: Define y gestiona los métodos de pago aceptados (Efectivo, Tarjeta de Débito, Crédito, Transferencia, Cuenta Corriente).
+
+  F. suppliers (Proveedores)
+   * Supplier: Directorio de los proveedores de mercadería (nombre, CUIT/RUT, teléfono, dirección) asociado a las compras y órdenes de compra de la app de productos.
+
+  ---
+
+  3. Flujos de Negocio y Reglas Críticas
+
+  A. El Flujo de Compra en el POS (sales:pos)
+   1. Validación de Caja: El sistema verifica de forma estricta que exista una sesión de caja (CashSession) abierta para el usuario actual antes de permitir iniciar una
+      venta.
+   2. Transaccionalidad Atómica (transaction.atomic()): Todo el proceso de checkout corre dentro de una transacción de base de datos. Si algo falla, se revierte por
+      completo previniendo inconsistencias de stock o saldos.
+   3. Cálculo de Descuentos y Promociones: El backend evalúa las reglas activas de la tabla Promotion y los puntos de fidelidad a redimir, aplicando los descuentos de
+      forma secuencial.
+   4. Control de Límite de Crédito: Si el método de pago seleccionado es "Cuenta Corriente" (crédito al cliente), el sistema valida que el saldo actual de deuda sumado
+      a la nueva compra no supere el limite_credito del cliente.
+   5. Cálculo de Impuestos Inverso: Para evitar ingresar precios con IVA desglosado en el POS, el sistema toma el precio final de venta al público y calcula el subtotal
+      neto y el monto de impuesto de forma inversa según la tasa del producto (tax_rate), registrando ambos datos para los reportes fiscales.
+
+  B. Programa de Fidelidad y Puntos (Signals)
+   * Acumulación Automática: Mediante señales de Django (post_save en Sale), se ejecuta una lógica que le asigna al cliente 1 punto por cada $1.000 de compra.
+   * Canje: El cliente puede usar sus puntos en caja como dinero real (donde 1 punto equivale a $1 de descuento directo), reduciendo sus puntos acumulados en tiempo
+     real.
+
+  C. Control de Stock Automático
+   * Cada venta genera un InventoryMovement de tipo OUT restando la cantidad vendida del stock físico del producto.
+   * Las devoluciones de ventas (SaleReturn) generan un movimiento de tipo IN, devolviendo la mercadería al stock activo, y si la venta original fue en Cuenta
+     Corriente, se genera automáticamente un abono de saldo a favor en la cuenta del cliente mediante señales (sales/signals.py).
+
+  ---
+
+  4. Interfaz de Usuario y Experiencia
+
+   * Dashboard de Inteligencia de Negocio (core/views.py): Presenta un panel analítico integral con gráficos dinámicos, alertas de stock mínimo o crítico, alertas de
+     productos próximos a vencer y cierres de caja.
+   * Pantalla de Ventas (POS): Interfaz dinámica de una sola página apoyada en Bootstrap y AJAX para agilizar la facturación en mostradores de alto tráfico.
+   * Envío de Tickets Digitales: Integración que permite enviar de forma rápida el ticket de compra formateado en texto plano a través de la API de WhatsApp al teléfono
+     del cliente.
+
+  ---
+
+  5. Estado del Proyecto (Plan de Estabilización)
+
+  Según el archivo PLAN_DE_ESTABILIZACION.txt, el proyecto se encuentra actualmente en una fase de consolidación técnica dividida en:
+   1. Testing de Robustez: Pruebas funcionales de flujos de venta y cierre de caja, simulando desconexiones de red repentinas para garantizar la integridad
+      transaccional (atomic) y pruebas de escalabilidad sobre las cuentas corrientes.
+   2. Gestión de Errores Rigurosa: Todo bug debe reproducirse localmente y corregirse acompañándolo obligatoriamente de un test automatizado (unitario o de integración)
+      antes de ser considerado resuelto.
+   3. Preparación de Infraestructura: Transición del entorno de desarrollo (DEBUG = True, SQLite) a un entorno productivo seguro (PostgreSQL, Gunicorn, Nginx,
+      desactivación de depuración y protección estricta de secretos en .env).
+
+

@@ -73,15 +73,6 @@ def customer_payment(request, pk):
                 # Descontar del saldo del cliente
                 customer.balance -= amount
                 customer.save()
-
-                from .models import CurrentAccount
-                CurrentAccount.objects.create(
-                    customer=customer,
-                    amount=amount,
-                    entry_type='CREDIT',
-                    reference=f"Pago Directo",
-                    balance_after=customer.balance
-                )
                 
                 messages.success(request, f"Pago de ${amount} registrado correctamente para {customer.full_name}.")
                 return redirect('customers:customer_list')

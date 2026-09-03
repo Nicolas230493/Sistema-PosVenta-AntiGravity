@@ -7,7 +7,7 @@ from finance.models import PaymentMethod
 class Sale(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)
-    date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
+    fecha_hora = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto IVA")
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Descuento Manual")
@@ -28,12 +28,13 @@ class Sale(models.Model):
     class Meta:
         verbose_name = "Venta"
         verbose_name_plural = "Ventas"
-        ordering = ['-date']
+        ordering = ['-fecha_hora']
 
 class SaleDetail(models.Model):
     sale = models.ForeignKey(Sale, related_name='details', on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True)
     quantity = models.IntegerField(verbose_name="Cantidad")
+    peso_kg = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Peso (kg)")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
     cost_price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo (Histórico)")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")

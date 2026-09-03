@@ -128,6 +128,8 @@ def open_cash(request):
             
         try:
             amount = Decimal(request.POST.get('amount', '0.00'))
+            if amount < 0:
+                raise ValueError("El monto inicial no puede ser negativo.")
             CashSession.objects.create(user=request.user, initial_amount=amount)
             messages.success(request, f"¡Caja abierta! Buen turno, {request.user.username}.")
         except Exception as e:
@@ -145,6 +147,8 @@ def add_expense(request):
             
         try:
             amount = Decimal(request.POST.get('amount', '0.00'))
+            if amount <= 0:
+                raise ValueError("El egreso debe ser mayor a cero.")
             description = request.POST.get('description')
             CashExpense.objects.create(session=session, amount=amount, description=description)
             messages.success(request, "Egreso registrado correctamente.")
@@ -163,6 +167,8 @@ def close_cash(request):
             
         try:
             real_amount = Decimal(request.POST.get('real_amount', '0.00'))
+            if real_amount < 0:
+                raise ValueError("El monto final no puede ser negativo.")
             notes = request.POST.get('notes', '')
             
             # Recalcular ventas digitales finales

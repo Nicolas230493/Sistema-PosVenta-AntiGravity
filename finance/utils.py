@@ -74,8 +74,9 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
     
     p.setFont("Helvetica", 10)
     for method in sales_summary:
-        if method['payment_method'] != 'CASH':
-            p.drawString(margin, y, f"Ventas {method['payment_method']}:")
+        method_name = method.get('payment_method__name') or method.get('payment_method') or 'Sin especificar'
+        if method_name != 'Efectivo':
+            p.drawString(margin, y, f"Ventas {method_name}:")
             p.drawRightString(width - margin, y, f"${method['total']}")
             y -= 0.5 * cm
 

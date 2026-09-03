@@ -1,6 +1,9 @@
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.urls import resolve
+from django.contrib.auth import logout
+from django.utils import timezone
+from datetime import timedelta
 
 class RoleAccessMiddleware:
     def __init__(self, get_response):
@@ -40,3 +43,19 @@ class RoleAccessMiddleware:
 
         response = self.get_response(request)
         return response
+
+class ExpirationCheckMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.user.is_authenticated and not request.user.is_superuser:
+            # Check trial expiration (30 days from date_joined)
+            if request.user.date_joined:
+                expiration_date = request.user.date_joined + timedelta(days=30)
+                if timezone.now() > expiration_date:
+                    logout(request)
+                    messages.error(request, 'Tu período de prueba de 30 días ha vencido. Contacta al administrador para renovar tu acceso.')
+                    return redirect('core:cuenta_expirada')
+        
+        return self.get_response(request)

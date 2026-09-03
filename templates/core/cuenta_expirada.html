@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="alert alert-danger p-5 shadow-sm rounded-4 text-center">
+        <i class="bi bi-exclamation-triangle fs-1"></i>
+        <h2 class="fw-bold mt-3">Cuenta Expirada</h2>
+        <p class="lead">Tu período de prueba de 30 días ha vencido. Contacta al administrador para renovar tu acceso.</p>
+        <a href="{% url 'login' %}" class="btn btn-outline-danger rounded-pill px-4 mt-3">Volver al Login</a>
+    </div>
+</div>
+{% endblock %}

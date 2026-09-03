@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Confirmar Eliminación{% endblock %}
+
+{% block content %}
+<div class="card p-4 border-0 shadow-sm text-center">
+    <p>¿Estás seguro de que quieres eliminar al usuario <strong>{{ user.username }}</strong>?</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'users:user_list' %}" class="btn btn-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

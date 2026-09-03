@@ -13,6 +13,9 @@ from django.db.models.functions import ExtractHour
 import urllib.parse
 import json
 
+def cuenta_expirada(request):
+    return render(request, 'core/cuenta_expirada.html')
+
 @login_required
 def global_search(request):
     q = request.GET.get('q', '')
@@ -65,7 +68,7 @@ def dashboard_view(request):
         messages.warning(request, f"Atención: Hay {vencimientos_30_dias.count()} productos próximos a vencer (30 días).")
 
     # 2. Resumen del Día para WhatsApp
-    sales_today = Sale.objects.filter(date__date=today)
+    sales_today = Sale.objects.filter(fecha_hora__date=today)
     total_revenue = sales_today.aggregate(total=Sum('total_amount'))['total'] or 0
     sales_count = sales_today.count()
     
@@ -84,7 +87,7 @@ def dashboard_view(request):
             total_digital += amount
     
     # Desglose por Categoría
-    cat_sales = SaleDetail.objects.filter(sale__date__date=today).values('product__category__name').annotate(total=Sum('subtotal'))
+    cat_sales = SaleDetail.objects.filter(sale__fecha_hora__date=today).values('product__category__name').annotate(total=Sum('subtotal'))
     cat_msg = ""
     for c in cat_sales:
         cat_name = c['product__category__name'] or "Sin Categoría"
@@ -117,8 +120,8 @@ def dashboard_view(request):
 
     # 3. Gráfico de Horas Pico (Histórico de 30 días para mejor promedio)
     thirty_days_ago = timezone.now() - timedelta(days=30)
-    sales_by_hour = Sale.objects.filter(date__gte=thirty_days_ago).annotate(
-        hour=ExtractHour('date')
+    sales_by_hour = Sale.objects.filter(fecha_hora__gte=thirty_days_ago).annotate(
+        hour=ExtractHour('fecha_hora')
     ).values('hour').annotate(
         count=Count('id'), 
         total=Sum('total_amount')

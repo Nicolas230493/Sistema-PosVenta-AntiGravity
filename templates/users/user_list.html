@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block page_title %}Gestión de Usuarios{% endblock %}
+
+{% block content %}
+<div class="card p-3 border-0 shadow-sm">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5>Usuarios Registrados</h5>
+        <a href="{% url 'users:user_create' %}" class="btn btn-primary rounded-pill">Nuevo Usuario</a>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Fecha Alta</th>
+                <th>Días Prueba</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.username }}</td>
+                <td>{{ u.first_name }} {{ u.last_name }}</td>
+                <td>{{ u.email }}</td>
+                <td>{{ u.date_joined|date:"d/m/Y" }}</td>
+                <td>
+                    {% if u.is_superuser %} N/A {% else %} {{ u.date_joined|remaining_trial_days }} {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'users:user_edit' u.pk %}" class="btn btn-sm btn-outline-secondary">Editar</a>
+                    <a href="{% url 'users:user_change_password' u.pk %}" class="btn btn-sm btn-outline-warning">Pass</a>
+                    <a href="{% url 'users:user_delete' u.pk %}" class="btn btn-sm btn-outline-danger">Borrar</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

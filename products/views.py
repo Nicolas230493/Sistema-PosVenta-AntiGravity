@@ -156,6 +156,9 @@ def bulk_price_update(request):
     if request.method == 'POST':
         category_id = request.POST.get('category')
         percentage = float(request.POST.get('percentage', 0))
+        if percentage <= -100:
+            messages.error(request, "El porcentaje no puede dejar precios en cero o negativos.")
+            return redirect('products:admin_tools')
         
         target = "Todos los productos"
         if category_id:
@@ -180,18 +183,23 @@ def bulk_price_update(request):
 @login_required
 def stock_loss_create(request):
     if request.method == 'POST':
-        product_id = request.POST.get('product')
-        qty = int(request.POST.get('quantity', 0))
-        reason = request.POST.get('reason')
-        product = get_object_or_404(Product, id=product_id)
-        if product.stock >= qty:
-            StockLoss.objects.create(product=product, quantity=qty, reason=reason, user=request.user)
-            product.stock -= qty
-            product.save()
-            InventoryMovement.objects.create(product=product, quantity=qty, movement_type='OUT', reference=f"BAJA: {reason}", user=request.user)
-            messages.success(request, "Baja registrada.")
-        else:
-            messages.error(request, "Stock insuficiente.")
+        try:
+            product_id = request.POST.get('product')
+            qty = int(request.POST.get('quantity', 0))
+            reason = request.POST.get('reason')
+            if qty <= 0:
+                raise ValueError("La cantidad debe ser mayor a cero.")
+            product = get_object_or_404(Product, id=product_id)
+            if product.stock >= qty:
+                StockLoss.objects.create(product=product, quantity=qty, reason=reason, user=request.user)
+                product.stock -= qty
+                product.save()
+                InventoryMovement.objects.create(product=product, quantity=qty, movement_type='OUT', reference=f"BAJA: {reason}", user=request.user)
+                messages.success(request, "Baja registrada.")
+            else:
+                messages.error(request, "Stock insuficiente.")
+        except ValueError as e:
+            messages.error(request, str(e))
     return redirect('products:product_list')
 
 @staff_member_required
@@ -293,7 +301,7 @@ def export_advanced_excel(request):
     first_day_month = today.replace(day=1)
 
     # Hoja 1: Ventas del Mes
-    sales = Sale.objects.filter(date__date__gte=first_day_month).values('id', 'date', 'customer__full_name', 'total_amount', 'payment_method')
+    sales = Sale.objects.filter(date__date__gte=first_day_month).values('id', 'date', 'customer__full_name', 'total_amount', 'payment_method__name')
     df_sales = pd.DataFrame(list(sales))
     if not df_sales.empty:
         df_sales['date'] = df_sales['date'].dt.strftime('%d/%m/%Y %H:%M')
@@ -306,10 +314,15 @@ def export_advanced_excel(request):
     response['Content-Disposition'] = f'attachment; filename=Reporte_Avanzado_{today.strftime("%m_%Y")}.xlsx'
 
     with pd.ExcelWriter(response, engine='openpyxl') as writer:
+        wrote_sheet = False
         if not df_sales.empty:
             df_sales.to_excel(writer, sheet_name='Ventas del Mes', index=False)
+            wrote_sheet = True
         if not df_critical.empty:
             df_critical.to_excel(writer, sheet_name='Stock Crítico', index=False)
+            wrote_sheet = True
+        if not wrote_sheet:
+            pd.DataFrame([{'Estado': 'Sin datos para el período'}]).to_excel(writer, sheet_name='Resumen', index=False)
 
     return response
 
@@ -461,7 +474,10 @@ def inventory_history(request):
 
 @login_required
 def export_inventory_excel(request):
-    products = Product.objects.select_related('supplier').all().values('name', 'description', 'price', 'cost_price', 'stock', 'min_stock', 'expiry_date', 'supplier__name')
+    products = Product.objects.select_related('supplier', 'category').all().values(
+        'sku', 'barcode', 'name', 'category__name', 'description',
+        'price', 'cost_price', 'stock', 'min_stock', 'expiry_date', 'supplier__name'
+    )
     df = pd.DataFrame(list(products))
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename=Inventario.xlsx'
@@ -548,6 +564,8 @@ def purchase_create(request):
                 for item in items:
                     product = Product.objects.get(id=item['product_id'])
                     qty, cost = int(item['qty']), Decimal(item['cost'])
+                    if qty <= 0 or cost < 0:
+                        raise Exception("Las cantidades deben ser mayores a cero y los costos no pueden ser negativos.")
                     subtotal = qty * cost
                     total += subtotal
                     PurchaseDetail.objects.create(purchase=purchase, product=product, quantity=qty, cost_price=cost, subtotal=subtotal)
@@ -568,6 +586,9 @@ def stock_entry_scanner(request):
     if request.method == 'POST':
         barcode = request.POST.get('barcode')
         qty = int(request.POST.get('quantity', 1))
+        if qty <= 0:
+            messages.error(request, "La cantidad debe ser mayor a cero.")
+            return redirect('products:stock_entry_scanner')
         
         product = Product.objects.filter(Q(barcode=barcode) | Q(sku=barcode)).first()
         

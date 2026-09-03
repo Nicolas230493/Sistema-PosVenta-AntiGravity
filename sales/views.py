@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse, FileResponse
@@ -12,6 +12,45 @@ from django.utils import timezone
 from .utils import generate_sale_pdf, generate_thermal_ticket, generate_total_sales_report
 import json
 from decimal import Decimal
+
+
+def _money(value, default='0'):
+    return Decimal(str(value or default))
+
+
+def _apply_server_promotions(product, qty, unit_price, active_promos, today):
+    price = unit_price
+    django_day = today.weekday()
+
+    for promo in active_promos:
+        is_target = promo.products.filter(id=product.id).exists()
+        if not is_target and product.category_id:
+            is_target = promo.categories.filter(id=product.category_id).exists()
+        if not is_target:
+            continue
+
+        if promo.promo_type == 'PERCENT':
+            price -= price * (promo.discount_percentage / Decimal('100'))
+        elif promo.promo_type == 'DAY_DISCOUNT' and promo.day_of_week == django_day:
+            price -= price * (promo.discount_percentage / Decimal('100'))
+        elif promo.promo_type == 'FIXED_QTY' and promo.fixed_qty > 0 and qty >= promo.fixed_qty:
+            num_packs = qty // promo.fixed_qty
+            remainder = qty % promo.fixed_qty
+            price = ((num_packs * promo.fixed_price) + (remainder * unit_price)) / qty
+
+    return price.quantize(Decimal('0.01'))
+
+
+def _price_for_product(product, price_list_id):
+    if price_list_id and price_list_id != 'default':
+        custom_price = ProductPrice.objects.filter(
+            product=product,
+            price_list_id=price_list_id,
+            price_list__active=True
+        ).values_list('price', flat=True).first()
+        if custom_price is not None:
+            return custom_price
+    return product.price
 
 @login_required
 def export_sale_pdf(request, pk):
@@ -34,6 +73,7 @@ def export_consolidated_report(request):
     return FileResponse(buffer, as_attachment=True, filename="Reporte_Ventas_ImpulsoSmart.pdf")
 
 @login_required
+@permission_required('sales.add_sale', raise_exception=True)
 def pos_view(request):
     # Validar sesión de caja activa
     active_session = CashSession.objects.filter(user=request.user, is_open=True).exists()
@@ -71,21 +111,26 @@ def pos_view(request):
         cart_data = request.POST.get('cart_data')
         customer_id = request.POST.get('customer_id')
         payment_method_id = request.POST.get('payment_method')
-        discount_amount = Decimal(request.POST.get('discount_amount', 0) or 0)
-        surcharge_amount = Decimal(request.POST.get('surcharge_amount', 0) or 0)
+        price_list_id = request.POST.get('price_list')
+        discount_amount = _money(request.POST.get('discount_amount'))
+        surcharge_amount = _money(request.POST.get('surcharge_amount'))
         
         # Puntos
         points_to_redeem = int(request.POST.get('points_redeemed', 0) or 0)
-        points_discount = Decimal(request.POST.get('points_discount', 0) or 0)
         
         try:
             cart = json.loads(cart_data)
             if not cart:
                 messages.error(request, "El carrito está vacío")
                 return redirect('sales:pos')
+            if discount_amount < 0 or surcharge_amount < 0:
+                raise Exception("Descuentos y recargos no pueden ser negativos.")
+            if points_to_redeem < 0:
+                raise Exception("Los puntos a canjear no pueden ser negativos.")
 
             customer = Customer.objects.get(id=customer_id) if customer_id else default_customer
             payment_method = PaymentMethod.objects.get(id=payment_method_id)
+            points_discount = Decimal(points_to_redeem)
 
             # Validación de Puntos
             if points_to_redeem > 0:
@@ -94,26 +139,49 @@ def pos_view(request):
                 if customer.points < points_to_redeem:
                     raise Exception(f"El cliente no tiene suficientes puntos ({customer.points}).")
 
-            # Calcular total estimado para validación de límite de crédito
-            temp_total = Decimal(0)
-            for item in cart:
-                temp_total += Decimal(item['price']) * int(item['qty'])
-            final_total_est = temp_total - discount_amount - points_discount + surcharge_amount
-
-            # Validación de Límite de Crédito
-            if payment_method.name == 'Cuenta Corriente' and customer:
-                if customer.limite_credito > 0: # 0 significa sin límite o sin crédito habilitado
-                    if (customer.balance + final_total_est) > customer.limite_credito:
-                        raise Exception(f"Límite de crédito excedido. Saldo actual: ${customer.balance}, Límite: ${customer.limite_credito}")
-                elif customer.dni_cuit == '00000000':
-                    raise Exception("No se puede fiar al Consumidor Final.")
-
             with transaction.atomic():
+                sale_items = []
+                total_items = Decimal('0.00')
+                total_tax = Decimal('0.00')
+                total_promo_disc = Decimal('0.00')
+
+                for item in cart:
+                    product = Product.objects.select_for_update().get(id=item['id'])
+                    qty = int(item['qty'])
+                    if qty <= 0:
+                        raise Exception("La cantidad vendida debe ser mayor a cero.")
+                    if product.stock < qty:
+                        raise Exception(f"Stock insuficiente para {product.name}")
+
+                    original_price = _price_for_product(product, price_list_id)
+                    price = _apply_server_promotions(product, qty, original_price, active_promos, today)
+                    promo_savings = (original_price - price) * qty
+                    subtotal = price * qty
+                    tax_rate = product.tax_rate
+                    tax_item = subtotal - (subtotal / (1 + (tax_rate / 100)))
+
+                    total_items += subtotal
+                    total_tax += tax_item
+                    total_promo_disc += promo_savings
+                    sale_items.append((product, qty, price, tax_rate, tax_item, subtotal))
+
+                final_total = total_items - discount_amount - points_discount + surcharge_amount
+                if final_total < 0:
+                    raise Exception("El total de la venta no puede ser negativo.")
+
+                # Validación de Límite de Crédito
+                if payment_method.name == 'Cuenta Corriente' and customer:
+                    if customer.limite_credito > 0: # 0 significa sin límite o sin crédito habilitado
+                        if (customer.balance + final_total) > customer.limite_credito:
+                            raise Exception(f"Límite de crédito excedido. Saldo actual: ${customer.balance}, Límite: ${customer.limite_credito}")
+                    elif customer.dni_cuit == '00000000':
+                        raise Exception("No se puede fiar al Consumidor Final.")
+
                 sale = Sale.objects.create(
                     user=request.user,
                     customer=customer,
-                    total_amount=0,
-                    tax_amount=0,
+                    total_amount=final_total,
+                    tax_amount=total_tax,
                     discount_amount=discount_amount,
                     points_redeemed=points_to_redeem,
                     points_discount=points_discount,
@@ -132,31 +200,9 @@ def pos_view(request):
                         details=f"Cliente: {customer.full_name}, Descuento: ${points_discount}"
                     )
 
-                total_items = 0
-                total_tax = 0
-                total_promo_disc = 0
-                for item in cart:
-                    product = Product.objects.select_for_update().get(id=item['id'])
-                    qty = int(item['qty'])
-                    if product.stock < qty:
-                        raise Exception(f"Stock insuficiente para {product.name}")
-                    
+                for product, qty, price, tax_rate, tax_item, subtotal in sale_items:
                     product.stock -= qty
                     product.save()
-                    
-                    # Precios desde el carrito (incluyen promos aplicadas en JS)
-                    price = Decimal(item['discounted_price'])
-                    original_price = Decimal(item['original_price_at_sale'])
-                    promo_savings = (original_price - price) * qty
-                    total_promo_disc += promo_savings
-                    
-                    subtotal = price * qty
-                    # Cálculo de IVA: el precio ya incluye IVA, lo desglosamos
-                    tax_rate = product.tax_rate
-                    tax_item = subtotal - (subtotal / (1 + (tax_rate / 100)))
-                    
-                    total_items += subtotal
-                    total_tax += tax_item
                     
                     SaleDetail.objects.create(
                         sale=sale,
@@ -177,9 +223,6 @@ def pos_view(request):
                         user=request.user
                     )
                 
-                final_total = total_items - discount_amount - points_discount + surcharge_amount
-                sale.total_amount = final_total
-                sale.tax_amount = total_tax
                 sale.promo_discount = total_promo_disc
                 sale.save()
                 

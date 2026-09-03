@@ -94,7 +94,7 @@
                             <i class="bi bi-box text-primary fs-5"></i>
                         </div>
                         <div>
-                            <div class="fw-bold">{{ product.name }}</div>
+                            <div class="fw-bold">{{ product.name }} {% if product.peso_kg %}<span class="badge bg-light text-dark ms-1">{{ product.peso_kg }} kg</span>{% endif %}</div>
                             <div class="small text-muted font-monospace">
                                 Barcode: {{ product.barcode|default:"---" }} | SKU: {{ product.sku }}
                             </div>

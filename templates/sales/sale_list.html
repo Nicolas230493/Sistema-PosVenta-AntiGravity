@@ -33,7 +33,7 @@
                 <td class="ps-4">
                     <span class="badge bg-body-secondary text-body border font-monospace">#{{ sale.id|stringformat:"05d" }}</span>
                 </td>
-                <td class="small">{{ sale.date|date:"d/m/Y H:i" }}</td>
+                <td class="small">{{ sale.fecha_hora|date:"d/m/Y H:i" }}</td>
                 <td>
                     <i class="bi bi-person-circle me-1 opacity-50"></i>{{ sale.user.username }}
                 </td>

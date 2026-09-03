@@ -29,6 +29,7 @@
                             data-id="{{ product.id }}"
                             data-name="{{ product.name }}" 
                             data-price="{{ product.price }}"
+                            data-unit="{{ product.unit }}"
                             data-sku="{{ product.sku }}"
                             data-barcode="{{ product.barcode|default:'' }}">
                             <i class="bi bi-plus-lg me-1"></i>Agregar
@@ -129,6 +130,7 @@
         <form method="post" id="pos-form">
             {% csrf_token %}
             <input type="hidden" name="cart_data" id="cart-data">
+            <input type="hidden" name="price_list" id="form-price-list" value="default">
             <input type="hidden" name="customer_id" id="form-customer-id">
             <input type="hidden" name="points_redeemed" id="form-points-redeemed">
             <input type="hidden" name="points_discount" id="form-points-discount">
@@ -184,6 +186,7 @@
 
     priceListSelect.addEventListener('change', function() {
         const listId = this.value;
+        document.getElementById('form-price-list').value = listId;
         document.querySelectorAll('.product-item').forEach(el => {
             const btn = el.querySelector('.add-to-cart');
             const productId = btn.dataset.id;
@@ -288,67 +291,65 @@
             const id = btn.dataset.id;
             const name = btn.dataset.name;
             const price = parseFloat(btn.dataset.price);
+            const unit = btn.dataset.unit;
 
             const existing = cart.find(item => item.id === id);
-            if (existing) existing.qty++;
-            else cart.push({ id, name, price, qty: 1 });
+            if (existing) {
+                if (unit === 'kg') existing.weight = (existing.weight || 0) + 1;
+                else existing.qty++;
+            }
+            else cart.push({ id, name, price, qty: 1, unit, weight: unit === 'kg' ? 1 : null });
             updateCart();
         });
     });
+
+    window.updateWeight = function(index, weight) {
+        cart[index].weight = parseFloat(weight);
+        updateCart();
+    }
 
     function updateCart() {
         const list = document.getElementById('cart-items');
         list.innerHTML = '';
         let subtotal_items = 0;
-        const currentDay = new Date().getDay(); // 0 (Dom) - 6 (Sáb)
-        // Django choices are 0 (Lun) - 6 (Dom), JS getDay is 0 (Dom) - 6 (Sáb)
+        const currentDay = new Date().getDay();
         const djangoDay = (currentDay + 6) % 7; 
 
         cart.forEach((item, index) => {
             let itemPrice = item.price;
             let promoApplied = "";
 
-            // Aplicar Promociones
+            // Aplicar Promociones (simplificado)
             promotions.forEach(promo => {
-                const isTarget = promo.product_ids.includes(parseInt(item.id)); // Simplificación: solo por ID producto por ahora
+                const isTarget = promo.product_ids.includes(parseInt(item.id));
                 if (isTarget) {
                     if (promo.type === 'PERCENT') {
-                        const disc = itemPrice * (promo.discount / 100);
-                        itemPrice -= disc;
+                        itemPrice -= itemPrice * (promo.discount / 100);
                         promoApplied = `<span class="badge bg-success-subtle text-success ms-2 small">-${promo.discount}%</span>`;
-                    } else if (promo.type === 'DAY_DISCOUNT' && promo.day === djangoDay) {
-                        const disc = itemPrice * (promo.discount / 100);
-                        itemPrice -= disc;
-                        promoApplied = `<span class="badge bg-info-subtle text-info ms-2 small">Promo Día</span>`;
-                    } else if (promo.type === 'FIXED_QTY' && item.qty >= promo.fixed_qty) {
-                        // Ejemplo: 2x1 -> fixed_qty=2, fixed_price=precio de 1
-                        const numPacks = Math.floor(item.qty / promo.fixed_qty);
-                        const remainder = item.qty % promo.fixed_qty;
-                        const packTotal = numPacks * promo.fixed_price;
-                        const remainderTotal = remainder * item.price;
-                        // Ajustar el subtotal de este item para que coincida con el pack
-                        itemPrice = (packTotal + remainderTotal) / item.qty;
-                        promoApplied = `<span class="badge bg-primary-subtle text-primary ms-2 small">${promo.name}</span>`;
                     }
                 }
             });
 
-            subtotal_items += itemPrice * item.qty;
+            const quantity = item.unit === 'kg' ? item.weight : item.qty;
+            subtotal_items += itemPrice * quantity;
+            
             list.innerHTML += `
                 <li class="list-group-item d-flex justify-content-between lh-sm">
                     <div>
                         <h6 class="my-0">${item.name} ${promoApplied}</h6>
-                        <small class="text-muted">x${item.qty} a $${itemPrice.toFixed(2)}</small>
+                        <small class="text-muted">
+                            ${item.unit === 'kg' ? 
+                                `<input type="number" step="0.001" value="${item.weight}" onchange="updateWeight(${index}, this.value)" class="form-control form-control-sm d-inline-block w-50"> kg` 
+                                : `x${item.qty}`} a $${itemPrice.toFixed(2)}
+                        </small>
                     </div>
                     <div class="text-end">
-                        <span class="text-muted d-block">$${(itemPrice * item.qty).toFixed(2)}</span>
+                        <span class="text-muted d-block">$${(itemPrice * quantity).toFixed(2)}</span>
                         <button class="btn btn-sm btn-link text-danger p-0" onclick="remove(${index})">Eliminar</button>
                     </div>
                 </li>
             `;
-            // Guardar info extra en el objeto de item para el backend
             item.discounted_price = itemPrice;
-            item.original_price_at_sale = item.price; // El precio de la lista seleccionada
         });
 
         const discount = parseFloat(document.getElementById('discount-input').value || 0);
@@ -359,7 +360,6 @@
         document.getElementById('total-amount').innerText = Math.max(0, total).toFixed(2);
         document.getElementById('cart-data').value = JSON.stringify(cart);
         
-        // Sincronizar inputs ocultos
         document.getElementById('form-points-redeemed').value = document.getElementById('points-to-redeem').value || 0;
         document.getElementById('form-points-discount').value = pointsDiscount;
     }
@@ -382,5 +382,6 @@
     
     // Inicializar
     document.getElementById('form-customer-id').value = customerSelect.value;
+    document.getElementById('form-price-list').value = priceListSelect.value;
 </script>
 {% endblock %}

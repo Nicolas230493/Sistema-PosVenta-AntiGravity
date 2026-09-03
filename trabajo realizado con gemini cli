@@ -1,0 +1,154 @@
+  Resumen de cambios realizados:
+
+   1. Modelos (models.py):
+       * Se agregó el campo peso_kg (DecimalField) a Product (en products/models.py).
+       * Se agregó el campo peso_kg (DecimalField) a SaleDetail (en sales/models.py) para registrar el peso vendido.
+   2. Formularios (forms.py):
+       * Se incluyó peso_kg en ProductForm para permitir su edición desde el panel administrativo.
+   3. Plantillas (Templates):
+       * product_list.html: Se añadió una visualización del peso al lado del nombre del producto en la lista de inventario.
+   4. Frontend (POS - pos.html):
+       * Se modificó el flujo del carrito para reconocer la unidad (kg) de los productos.
+       * Se implementó el cálculo dinámico: al agregar un producto pesable, aparece un campo de entrada para modificar su peso en el carrito, lo cual recalcula
+         automáticamente el subtotal y el total de la venta en tiempo real.
+   5. Migraciones:
+       * Se ejecutaron exitosamente los comandos ./.venv/bin/python manage.py makemigrations y migrate para actualizar la base de datos.
+
+  La funcionalidad ya está operativa en el entorno.
+
+
+Prueba Barcode:
+
+He verificado la funcionalidad de generación de códigos de barras. Aquí están los resultados y los pasos solicitados:
+
+  1. Verificación del Código
+   * Librerías: El proyecto ya tiene instaladas python-barcode y Pillow correctamente en el entorno virtual.
+   * Código Existente: La lógica en products/utils.py utiliza barcode.writer.ImageWriter() y reportlab para dibujar códigos de barras dinámicamente en memoria, lo cual
+     es correcto y eficiente. No guarda imágenes innecesarias en disco, sino que las renderiza directamente en el PDF generado para imprimir.
+
+  2. Script de Prueba
+  He creado el archivo test_barcode.py en la raíz del proyecto para validar la capacidad del sistema de guardar imágenes en el directorio MEDIA.
+
+   * Para ejecutar la prueba:
+
+   1     ./.venv/bin/python test_barcode.py
+   * Resultado esperado:
+
+   1     --- Probando generación de código de barras ---
+   2     Directorio MEDIA: /ruta/a/tu/proyecto/media
+   3     ¡Éxito! Código de barras generado en: /ruta/a/tu/proyecto/media/test_barcode.png
+
+  3. Verificación de Integración
+  Para asegurar que los productos rendericen sus etiquetas sin errores 500:
+
+   1. Asegurar datos: Verifica que los productos en la base de datos tengan un campo barcode (código de barras) asignado y que price no sea nulo.
+   2. Verificar la Vista: En tu products/views.py, asegúrate de que la vista que invoca a generate_product_labels maneje el caso en que un producto no tenga código de
+      barras o tenga un formato inválido (la función actual en utils.py ya tiene un if not product.barcode: continue que evita errores fatales).
+   3. Prueba manual:
+       * Ve a la lista de productos (/products/).
+       * Selecciona productos que tengan código de barras.
+       * Haz clic en el botón de "Imprimir Etiquetas".
+       * Si se descarga un PDF, la integración es exitosa. Si obtienes un error 500, revisa los logs de Django buscando "BarcodeError" (de la librería python-barcode) o
+         problemas de permisos en la carpeta media.
+
+  Recomendación: La lógica actual en utils.py está diseñada para generar etiquetas PDF "al vuelo" sin depender de archivos de imagen guardados en disco, lo cual es una
+  buena práctica para evitar acumular archivos basura en la carpeta MEDIA. Mantén la lógica así.
+
+Colocar Tiempo a los Usuarios:
+
+He implementado el sistema de control de expiración de 30 días para usuarios no administradores. Aquí los detalles:
+
+   1. Middleware de Expiración (core/middleware.py):
+       * Se creó ExpirationCheckMiddleware.
+       * Verifica si el usuario no es superusuario.
+       * Calcula si han pasado más de 30 días desde date_joined.
+       * Si expiró, cierra la sesión (logout) y redirige a la vista de cuenta expirada.
+   2. Configuración:
+       * Se registró ExpirationCheckMiddleware en pos_system/settings.py (debe ir después de AuthenticationMiddleware).
+   3. Interfaz y Plantillas:
+       * Se creó templates/core/cuenta_expirada.html para informar al usuario.
+       * Se configuró la nueva URL /cuenta-expirada/ en core/urls.py y se creó la vista correspondiente en core/views.py.
+       * Se creó un nuevo filtro de template remaining_trial_days en core/templatetags/custom_filters.py.
+       * Se actualizó templates/base.html para mostrar el indicador de "Días de prueba restantes" en la barra superior solo para usuarios no administradores.
+
+  El sistema está listo y activo.
+
+He implementado exitosamente la restricción de gestión de usuarios para que únicamente el superusuario tenga acceso total, mediante la creación de la aplicación users
+  y la configuración de permisos estrictos.
+
+  Resumen de cambios:
+
+   1. Nueva Aplicación (users):
+       * Se creó la app users para manejar el CRUD completo (listar, crear, editar, cambiar contraseña y eliminar usuarios).
+       * Se registró en pos_system/settings.py e incluyó en pos_system/urls.py.
+   2. Seguridad y Permisos:
+       * Todas las vistas en users/views.py están protegidas con el decorador @user_passes_test(lambda u: u.is_superuser). Si un usuario no es superusuario, es
+         redirigido al dashboard.
+       * Se utilizan los formularios seguros de Django (UserForm, UserPasswordForm) para la creación y edición, asegurando la encriptación de contraseñas.
+   3. Interfaz de Usuario:
+       * Se actualizó templates/base.html para mostrar la sección "Gestión de Usuarios" en la barra lateral exclusivamente cuando el usuario logueado es superusuario.
+       * Se crearon las plantillas necesarias (user_list.html, user_form.html, etc.) en templates/users/ con un diseño consistente.
+
+  La gestión de usuarios está ahora centralizada y protegida según los requerimientos solicitados.
+
+Gestion de Usuarios Parte 2:
+
+
+He implementado exitosamente un sistema de permisos granulares basado en el framework de permisos de Django, permitiendo controlar el acceso tanto en el backend como
+  en la interfaz.
+
+  Resumen de cambios realizados:
+
+   1. Gestión de Usuarios y Permisos (users app):
+       * Se creó la aplicación users con vistas CRUD completas, restringidas exclusivamente a Superusuarios mediante el decorador @user_passes_test.
+       * Se actualizó el formulario de usuario (UserForm) para permitir la asignación directa de permisos (user_permissions) desde la interfaz de edición.
+   2. Protección en Backend:
+       * Se aplicó el decorador @permission_required('app.nombre_permiso', raise_exception=True) en las vistas críticas (ej. pos_view en sales/views.py para asegurar
+         que solo usuarios autorizados puedan cargar ventas).
+   3. Renderizado Dinámico en Frontend (base.html):
+       * Se actualizaron los enlaces del menú lateral utilizando etiquetas {% if perms.app.nombre_permiso %}. Ahora, los usuarios solo visualizarán las opciones y
+         módulos para los cuales tienen permisos asignados, ocultando los demás automáticamente.
+
+  Este sistema asegura un control de acceso robusto y una experiencia de usuario personalizada basada en roles.
+
+Mejorar la Vista Celulares
+
+ He completado la refactorización de templates/base.html para modernizar la estructura y hacerla completamente responsiva.
+
+  Cambios realizados:
+
+   1. Eliminación de CSS obsoleto: He eliminado todas las reglas con !important, anchos fijos de la barra lateral, clases .toggled y márgenes izquierdos forzados. El
+      diseño ahora es mucho más limpio y fácil de mantener.
+   2. Adopción de Bootstrap 5 Offcanvas: La barra lateral antigua fue reemplazada por un componente <div class="offcanvas-md offcanvas-start">.
+       * Comportamiento: En pantallas de escritorio (md o superior), se comporta como una barra lateral fija. En pantallas pequeñas (celulares), se convierte
+         automáticamente en un menú deslizable que ocupa parte de la pantalla.
+   3. Navbar y Hamburguesa: Se añadió un botón hamburguesa (d-md-none) en la parte superior izquierda, que solo aparece en dispositivos móviles para abrir el menú
+      Offcanvas.
+   4. Layout Flexible: El contenedor principal (main) ahora utiliza flex-grow-1 y container-fluid, eliminando la necesidad de gestionar manualmente los márgenes o
+      anchos de la barra lateral mediante CSS, delegando esta responsabilidad a Bootstrap.
+
+  Con esta estructura, el sistema es ahora Mobile-First y mucho más eficiente. Puedes navegar desde el móvil o reducir el tamaño de la ventana del navegador en
+  escritorio para ver cómo el menú se adapta automáticamente.
+
+Agregar Fecha y Hora
+
+He implementado el sistema de registro de fecha y hora, así como la zona horaria y un reloj en tiempo real en la interfaz.
+
+  Resumen de cambios:
+
+   1. Configuración de Zona Horaria (settings.py):
+       * Se configuró TIME_ZONE = 'America/Argentina/Buenos_Aires' y LANGUAGE_CODE = 'es-ar'.
+   2. Modelos (models.py):
+       * Se renombró el campo date a fecha_hora en el modelo Sale para asegurar consistencia y claridad. Se aplicaron las migraciones correspondientes tras ajustar
+         referencias en el admin y en las opciones del modelo.
+   3. Visualización en Interfaz:
+       * Se actualizó templates/sales/sale_list.html para mostrar la columna Fecha y Hora formateada correctamente.
+   4. Reloj en tiempo real (base.html):
+       * Se agregó un elemento #realtime-clock en el navbar superior junto al título de la página.
+       * Se añadió un script JavaScript en el pie de página que actualiza este reloj cada segundo con la fecha y hora actual en formato local (es-AR).
+
+  El sistema ahora gestiona y visualiza la fecha y hora de forma coherente en todo el proyecto.
+
+
+
+

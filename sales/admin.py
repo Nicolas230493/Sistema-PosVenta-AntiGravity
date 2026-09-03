@@ -15,8 +15,8 @@ class SaleDetailInline(admin.TabularInline):
 
 @admin.register(Sale)
 class SaleAdmin(admin.ModelAdmin):
-    list_display = ('id', 'customer', 'date', 'total_amount', 'payment_method', 'user')
-    list_filter = ('date', 'payment_method')
+    list_display = ('id', 'customer', 'fecha_hora', 'total_amount', 'payment_method', 'user')
+    list_filter = ('fecha_hora', 'payment_method')
     search_fields = ('id', 'customer__full_name')
     inlines = [SaleDetailInline]
 

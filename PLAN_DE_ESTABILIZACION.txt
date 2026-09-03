@@ -1,0 +1,28 @@
+# PLAN DE ESTABILIZACION Y DESPLIEGUE - POS Venta Antigravity
+
+## Fase 1: Testing Intensivo (Estabilización)
+1. **Testing Funcional:** Ejecutar todos los flujos clave (Venta, Cierre de caja, Compra, Importación Excel) diariamente.
+2. **Testing de Casos Borde (Edge Cases):**
+    * Entradas de datos fuera de rango (ej. precios negativos, cantidades cero).
+    * Simulación de desconexión durante una venta (validar atomicidad).
+    * Intentos de acceso sin permisos (staff vs. usuario normal).
+3. **Integridad de Datos:** Verificar regularmente que el saldo de las cuentas corrientes, los puntos y el stock coincidan con los movimientos.
+
+## Fase 2: Protocolo de Gestión de Bugs
+* **Documentar:** Al detectar un error, registrarlo:
+    * Descripción del comportamiento esperado vs. real.
+    * Pasos para reproducirlo.
+    * Logs relevantes.
+* **Priorización:**
+    * Crítico (bloquea la operación).
+    * Mayor (afecta funcionalidad clave).
+    * Menor (cosmético).
+* **Verificación:** Todo bug requiere una prueba automatizada antes de cerrar el ticket.
+
+## Fase 3: Preparación para Despliegue
+1. **Entorno:** Configurar las variables de entorno (`.env`) adecuadamente (evitar exponer secretos).
+2. **Seguridad:**
+    * Cambiar claves por defecto.
+    * Configurar `ALLOWED_HOSTS` en `settings.py`.
+    * Desactivar `DEBUG = False`.
+3. **Servidor:** Instalar herramientas de servidor (Gunicorn, Nginx, Base de datos de producción - PostgreSQL).
