@@ -16,14 +16,14 @@ import urllib.parse
 @login_required
 def export_statement_pdf(request, pk):
     customer = get_object_or_404(Customer, pk=pk)
-    sales = Sale.objects.filter(customer=customer).order_by('date')
+    sales = Sale.objects.filter(customer=customer).order_by('fecha_hora')
     payments = Payment.objects.filter(customer=customer).order_by('date')
     
     # Combinar y ordenar transacciones
     transactions = []
     for s in sales:
         transactions.append({
-            'date': s.date,
+            'date': s.fecha_hora,
             'concept': f"Venta #{s.id}",
             'type': 'SALE',
             'amount': s.total_amount

@@ -228,23 +228,23 @@ def business_intelligence(request):
     movement_filters = Q(movement_type='IN')
 
     if start_date:
-        sale_filters &= Q(date__gte=start_date)
+        sale_filters &= Q(fecha_hora__gte=start_date)
         expense_filters &= Q(date__gte=start_date)
         return_filters &= Q(date__gte=start_date)
         movement_filters &= Q(product__inventorymovement__date__gte=start_date) # Ajuste para ranking de proveedores
 
     # 1. Gráfico de Horas Pico
-    sales_by_hour = Sale.objects.filter(sale_filters).annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
+    sales_by_hour = Sale.objects.filter(sale_filters).annotate(hour=ExtractHour('fecha_hora')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
 
     # 2. Top Productos (Más vendidos)
-    top_products = SaleDetail.objects.filter(sale__date__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
+    top_products = SaleDetail.objects.filter(sale__fecha_hora__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
 
     # 3. Reporte de Productos Muertos (>60 días sin ventas)
     # Excluimos productos creados en los últimos 30 días para no penalizar stock nuevo
     thirty_days_ago = timezone.now() - timedelta(days=30)
     sixty_days_ago = timezone.now() - timedelta(days=60)
     
-    sold_ids = SaleDetail.objects.filter(sale__date__gte=sixty_days_ago).values_list('product_id', flat=True)
+    sold_ids = SaleDetail.objects.filter(sale__fecha_hora__gte=sixty_days_ago).values_list('product_id', flat=True)
     dead_products = Product.objects.exclude(id__in=sold_ids).filter(created_at__lt=thirty_days_ago, stock__gt=0).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
 
     total_dead_capital = dead_products.aggregate(total=Sum(F('stock') * F('cost_price')))['total'] or 0
@@ -261,7 +261,7 @@ def business_intelligence(request):
     from finance.models import CashExpense
 
     total_revenue = Sale.objects.filter(sale_filters).aggregate(total=Sum('total_amount'))['total'] or 0
-    total_cost = SaleDetail.objects.filter(sale__date__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).aggregate(total=Sum(F('quantity') * F('cost_price_at_sale')))['total'] or 0
+    total_cost = SaleDetail.objects.filter(sale__fecha_hora__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).aggregate(total=Sum(F('quantity') * F('cost_price_at_sale')))['total'] or 0
     total_expenses = CashExpense.objects.filter(expense_filters).aggregate(total=Sum('amount'))['total'] or 0
     total_returns = SaleReturn.objects.filter(return_filters).aggregate(total=Sum('total_amount'))['total'] or 0
     
@@ -301,10 +301,10 @@ def export_advanced_excel(request):
     first_day_month = today.replace(day=1)
 
     # Hoja 1: Ventas del Mes
-    sales = Sale.objects.filter(date__date__gte=first_day_month).values('id', 'date', 'customer__full_name', 'total_amount', 'payment_method__name')
+    sales = Sale.objects.filter(fecha_hora__date__gte=first_day_month).values('id', 'fecha_hora', 'customer__full_name', 'total_amount', 'payment_method__name')
     df_sales = pd.DataFrame(list(sales))
     if not df_sales.empty:
-        df_sales['date'] = df_sales['date'].dt.strftime('%d/%m/%Y %H:%M')
+        df_sales['fecha_hora'] = df_sales['fecha_hora'].dt.strftime('%d/%m/%Y %H:%M')
 
     # Hoja 2: Stock Crítico
     critical_stock = Product.objects.filter(stock__lte=F('min_stock')).values('name', 'stock', 'min_stock', 'supplier__name')

@@ -1,7 +1,8 @@
 import json
 from decimal import Decimal
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Permission
+from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from django.urls import reverse
 
@@ -9,13 +10,17 @@ from customers.models import Customer, CurrentAccount
 from finance.models import CashSession, PaymentMethod
 from products.models import Category, InventoryMovement, Product
 from suppliers.models import Supplier
-from .models import Sale, SaleDetail
-
+from core.models import TurnoCaja
+from sales.models import Sale, SaleDetail
 
 class POSTestCase(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='cashier', password='pass12345')
+        add_sale_perm = Permission.objects.get(codename='add_sale', content_type=ContentType.objects.get(app_label='sales', model='sale'))
+        self.user.user_permissions.add(add_sale_perm)
         self.client.force_login(self.user)
+        # Crear turno de caja
+        TurnoCaja.objects.create(usuario=self.user, monto_inicial=Decimal('100.00'), estado='ABIERTO')
         self.supplier = Supplier.objects.create(name='Proveedor')
         self.category = Category.objects.create(name='Almacen')
         self.customer = Customer.objects.create(

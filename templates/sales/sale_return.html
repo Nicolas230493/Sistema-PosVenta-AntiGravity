@@ -9,7 +9,7 @@
                 </div>
                 <div class="card-body">
                     <p><strong>Cliente:</strong> {{ sale.customer.full_name|default:"Consumidor Final" }}</p>
-                    <p><strong>Fecha Venta:</strong> {{ sale.date|date:"d/m/Y H:i" }}</p>
+                    <p><strong>Fecha Venta:</strong> {{ sale.fecha_hora|date:"d/m/Y H:i" }}</p>
                     <p><strong>Método de Pago:</strong> {{ sale.payment_method.name }}</p>
                     <hr>
                     <form method="post">

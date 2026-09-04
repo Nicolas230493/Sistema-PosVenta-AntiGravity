@@ -24,7 +24,7 @@ def export_cash_report(request, pk):
     
     sales_summary = Sale.objects.filter(
         user=session.user,
-        date__range=[start, end]
+        fecha_hora__range=[start, end]
     ).values('payment_method__name').annotate(total=models.Sum('total_amount'))
     
     payments_summary = Payment.objects.filter(
@@ -50,12 +50,12 @@ def cash_dashboard(request):
     
     # Datos de Rentabilidad (Utilidad Bruta) del día actual para todos los usuarios (Vista Gerencial)
     today = timezone.localdate()
-    sales_today = Sale.objects.filter(date__date=today)
+    sales_today = Sale.objects.filter(fecha_hora__date=today)
     
     total_revenue = sales_today.aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
     
     # RECALIBRACIÓN: Calcular costo usando el precio de costo CAPTURADO en el momento de la venta
-    total_cost = SaleDetail.objects.filter(sale__date__date=today).aggregate(
+    total_cost = SaleDetail.objects.filter(sale__fecha_hora__date=today).aggregate(
         total=models.Sum(models.F('quantity') * models.F('cost_price_at_sale'))
     )['total'] or Decimal('0.00')
     
@@ -71,7 +71,7 @@ def cash_dashboard(request):
         # 1. Ventas en efectivo de ESTA sesión
         sales_cash = Sale.objects.filter(
             user=request.user,
-            date__gte=active_session.start_date, 
+            fecha_hora__gte=active_session.start_date, 
             payment_method=cash_method
         ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
         
@@ -94,7 +94,7 @@ def cash_dashboard(request):
         # 5. Otras métricas (Tarjetas, Transferencias) para información del cajero
         digital_sales = Sale.objects.filter(
             user=request.user,
-            date__gte=active_session.start_date,
+            fecha_hora__gte=active_session.start_date,
             payment_method__is_digital=True
         ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
         
@@ -103,7 +103,7 @@ def cash_dashboard(request):
         
         other_payments = Sale.objects.filter(
             user=request.user,
-            date__gte=active_session.start_date
+            fecha_hora__gte=active_session.start_date
         ).exclude(payment_method__in=[cash_method, cc_method]).values('payment_method__name').annotate(total=models.Sum('total_amount'))
         
     return render(request, 'finance/dashboard.html', {
@@ -174,7 +174,7 @@ def close_cash(request):
             # Recalcular ventas digitales finales
             digital_sales = Sale.objects.filter(
                 user=request.user,
-                date__gte=session.start_date,
+                fecha_hora__gte=session.start_date,
                 payment_method__is_digital=True
             ).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
             
@@ -204,7 +204,7 @@ def fiscal_reports(request):
     year = request.GET.get('year', timezone.now().year)
     
     # IVA Ventas
-    sales = Sale.objects.filter(date__month=month, date__year=year).order_by('date')
+    sales = Sale.objects.filter(fecha_hora__month=month, fecha_hora__year=year).order_by('fecha_hora')
     
     # IVA Compras
     purchases = Purchase.objects.filter(date__month=month, date__year=year).order_by('date')
@@ -220,7 +220,7 @@ def fiscal_reports(request):
             for s in sales:
                 neto = s.total_amount - s.tax_amount
                 sales_data.append({
-                    'Fecha': s.date.strftime('%d/%m/%Y'),
+                    'Fecha': s.fecha_hora.strftime('%d/%m/%Y'),
                     'Comprobante': f'Ticket #{s.id}',
                     'Cliente': s.customer.full_name if s.customer else 'Consumidor Final',
                     'DNI/CUIT': s.customer.dni_cuit if s.customer else '---',

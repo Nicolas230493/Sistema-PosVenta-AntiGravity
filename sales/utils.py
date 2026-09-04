@@ -22,7 +22,7 @@ def generate_sale_pdf(response, sale):
     p.setFont("Helvetica-Bold", 12)
     p.drawString(margin, height - margin - 2.5 * cm, f"VENTA #{sale.id}")
     p.setFont("Helvetica", 10)
-    p.drawString(margin, height - margin - 3.2 * cm, f"Fecha: {sale.date.strftime('%d/%m/%Y %H:%M')}")
+    p.drawString(margin, height - margin - 3.2 * cm, f"Fecha: {sale.fecha_hora.strftime('%d/%m/%Y %H:%M')}")
     
     y = height - margin - 5 * cm
     p.setFont("Helvetica-Bold", 11)
@@ -72,7 +72,7 @@ def generate_thermal_ticket(sale):
     p.drawCentredString(width/2, height - 10*mm, "IMPULSO SMART")
     p.setFont("Helvetica", 8)
     p.drawCentredString(width/2, height - 15*mm, f"Ticket #{sale.id}")
-    p.drawCentredString(width/2, height - 19*mm, sale.date.strftime('%d/%m/%Y %H:%M'))
+    p.drawCentredString(width/2, height - 19*mm, sale.fecha_hora.strftime('%d/%m/%Y %H:%M'))
     
     p.line(5*mm, height - 22*mm, 75*mm, height - 22*mm)
     
@@ -151,7 +151,7 @@ def generate_total_sales_report(sales):
     total_general = 0
     for s in sales:
         p.drawString(2*cm, y, f"#{s.id}")
-        p.drawString(4*cm, y, s.date.strftime("%d/%m/%Y %H:%M"))
+        p.drawString(4*cm, y, s.fecha_hora.strftime("%d/%m/%Y %H:%M"))
         p.drawString(10*cm, y, s.user.username if s.user else "Admin")
         p.drawRightString(19*cm, y, f"${s.total_amount}")
         total_general += s.total_amount

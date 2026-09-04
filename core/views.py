@@ -13,6 +13,50 @@ from django.db.models.functions import ExtractHour
 import urllib.parse
 import json
 
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import F, Sum, Count, Q
+from django.http import JsonResponse
+from django.urls import reverse
+from products.models import Product, StockLoss
+from sales.models import Sale, SaleDetail
+from customers.models import Customer
+from core.models import TurnoCaja
+from django.db.models.functions import ExtractHour
+import urllib.parse
+import json
+
+@login_required
+def abrir_turno(request):
+    if request.method == 'POST':
+        monto_inicial = request.POST.get('monto_inicial', 0)
+        TurnoCaja.objects.create(usuario=request.user, monto_inicial=monto_inicial)
+        messages.success(request, "Turno abierto correctamente.")
+        return redirect('core:dashboard') # Asumiendo URL de dashboard
+    return render(request, 'core/abrir_turno.html')
+
+@login_required
+def cerrar_turno(request):
+    turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
+    if not turno:
+        messages.error(request, "No hay turno abierto.")
+        return redirect('core:dashboard')
+    
+    if request.method == 'POST':
+        # Calcular monto final basado en ventas del turno
+        ventas = Sale.objects.filter(user=request.user, turno=turno)
+        monto_final = ventas.aggregate(total=Sum('total_amount'))['total'] or 0
+        turno.monto_final = monto_final
+        turno.estado = 'CERRADO'
+        turno.fecha_cierre = timezone.now()
+        turno.save()
+        messages.success(request, f"Turno cerrado. Total recaudado: ${monto_final}")
+        return redirect('core:dashboard')
+    return render(request, 'core/cerrar_turno.html', {'turno': turno})
+
 def cuenta_expirada(request):
     return render(request, 'core/cuenta_expirada.html')
 

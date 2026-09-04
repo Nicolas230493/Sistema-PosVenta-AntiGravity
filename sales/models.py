@@ -3,10 +3,12 @@ from django.contrib.auth.models import User
 from products.models import Product
 from customers.models import Customer
 from finance.models import PaymentMethod
+from core.models import TurnoCaja
 
 class Sale(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)
+    turno = models.ForeignKey(TurnoCaja, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Turno de Caja")
     fecha_hora = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto IVA")

@@ -5,10 +5,11 @@ from django.db import transaction
 from django.http import HttpResponse, FileResponse
 from products.models import Product, InventoryMovement, PriceList, ProductPrice
 from customers.models import Customer
-from finance.models import PaymentMethod, CashSession
+from finance.models import PaymentMethod
+from core.models import ActivityLog, TurnoCaja
 from .models import Sale, SaleDetail, SaleReturn, SaleReturnDetail, Promotion
-from core.models import ActivityLog
 from django.utils import timezone
+
 from .utils import generate_sale_pdf, generate_thermal_ticket, generate_total_sales_report
 import json
 from decimal import Decimal
@@ -68,18 +69,18 @@ def export_thermal_ticket(request, pk):
 
 @login_required
 def export_consolidated_report(request):
-    sales = Sale.objects.all().order_by('-date')
+    sales = Sale.objects.all().order_by('-fecha_hora')
     buffer = generate_total_sales_report(sales)
     return FileResponse(buffer, as_attachment=True, filename="Reporte_Ventas_ImpulsoSmart.pdf")
 
 @login_required
 @permission_required('sales.add_sale', raise_exception=True)
 def pos_view(request):
-    # Validar sesión de caja activa
-    active_session = CashSession.objects.filter(user=request.user, is_open=True).exists()
-    if not active_session:
-        messages.warning(request, "Debes abrir una sesión de caja antes de realizar ventas.")
-        return redirect('finance:cash_dashboard')
+    # Validar turno de caja activo
+    active_turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
+    if not active_turno:
+        messages.warning(request, "Debes abrir un turno de caja antes de realizar ventas.")
+        return redirect('dashboard')
 
     products = Product.objects.filter(stock__gt=0)
     customers = Customer.objects.all()
@@ -108,25 +109,29 @@ def pos_view(request):
         })
 
     if request.method == 'POST':
-        cart_data = request.POST.get('cart_data')
-        customer_id = request.POST.get('customer_id')
-        payment_method_id = request.POST.get('payment_method')
-        price_list_id = request.POST.get('price_list')
-        discount_amount = _money(request.POST.get('discount_amount'))
-        surcharge_amount = _money(request.POST.get('surcharge_amount'))
-        
-        # Puntos
-        points_to_redeem = int(request.POST.get('points_redeemed', 0) or 0)
-        
         try:
+            cart_data = request.POST.get('cart_data')
+            customer_id = request.POST.get('customer_id')
+            payment_method_id = request.POST.get('payment_method')
+            price_list_id = request.POST.get('price_list')
+            discount_amount = _money(request.POST.get('discount_amount'))
+            surcharge_amount = _money(request.POST.get('surcharge_amount'))
+            points_to_redeem = int(request.POST.get('points_redeemed', 0) or 0)
+
+            if not cart_data:
+                raise ValueError("No se enviaron datos del carrito.")
+
             cart = json.loads(cart_data)
             if not cart:
-                messages.error(request, "El carrito está vacío")
-                return redirect('sales:pos')
+                raise ValueError("El carrito está vacío.")
+
             if discount_amount < 0 or surcharge_amount < 0:
-                raise Exception("Descuentos y recargos no pueden ser negativos.")
+                raise ValueError("Descuentos y recargos no pueden ser negativos.")
             if points_to_redeem < 0:
-                raise Exception("Los puntos a canjear no pueden ser negativos.")
+                raise ValueError("Los puntos a canjear no pueden ser negativos.")
+
+            if not payment_method_id:
+                raise ValueError("Debe seleccionar un método de pago.")
 
             customer = Customer.objects.get(id=customer_id) if customer_id else default_customer
             payment_method = PaymentMethod.objects.get(id=payment_method_id)
@@ -135,11 +140,16 @@ def pos_view(request):
             # Validación de Puntos
             if points_to_redeem > 0:
                 if not customer:
-                    raise Exception("Debe seleccionar un cliente para canjear puntos.")
+                    raise ValueError("Debe seleccionar un cliente para canjear puntos.")
                 if customer.points < points_to_redeem:
-                    raise Exception(f"El cliente no tiene suficientes puntos ({customer.points}).")
+                    raise ValueError(f"El cliente no tiene suficientes puntos ({customer.points}).")
 
             with transaction.atomic():
+                # Re-verificar turno activo dentro de la transacción
+                active_turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
+                if not active_turno:
+                    raise Exception("Turno de caja cerrado durante la transacción.")
+
                 sale_items = []
                 total_items = Decimal('0.00')
                 total_tax = Decimal('0.00')
@@ -180,11 +190,13 @@ def pos_view(request):
                 sale = Sale.objects.create(
                     user=request.user,
                     customer=customer,
+                    turno=active_turno,
                     total_amount=final_total,
                     tax_amount=total_tax,
                     discount_amount=discount_amount,
                     points_redeemed=points_to_redeem,
                     points_discount=points_discount,
+                    promo_discount=total_promo_disc,
                     surcharge_amount=surcharge_amount,
                     payment_method=payment_method
                 )
@@ -223,12 +235,6 @@ def pos_view(request):
                         user=request.user
                     )
                 
-                sale.promo_discount = total_promo_disc
-                sale.save()
-                
-                # Note: signals.py handles CC balance now. 
-                # But signals.py uses payment_method.name == 'Cuenta Corriente'.
-                
                 request.session['last_sale_id'] = sale.id
                 messages.success(request, f"Venta #{sale.id} registrada ({payment_method.name}).")
                 return redirect('sales:pos')
@@ -257,7 +263,7 @@ def pos_view(request):
 
 @login_required
 def sale_list(request):
-    sales = Sale.objects.all().order_by('-date')
+    sales = Sale.objects.all().order_by('-fecha_hora')
     return render(request, 'sales/sale_list.html', {'sales': sales})
 
 @login_required
@@ -268,7 +274,7 @@ def whatsapp_ticket(request, pk):
         return redirect('sales:sale_list')
     
     resumen = f"*Ticket Digital - Impulso Smart*\n"
-    resumen += f"Venta #{sale.id} - {sale.date.strftime('%d/%m/%Y')}\n"
+    resumen += f"Venta #{sale.id} - {sale.fecha_hora.strftime('%d/%m/%Y')}\n"
     resumen += f"--------------------------\n"
     for item in sale.details.all():
         resumen += f"{item.product.name} x{item.quantity}: ${item.subtotal}\n"
