@@ -29,6 +29,23 @@ from django.db.models.functions import ExtractHour
 import urllib.parse
 import json
 
+from .forms import ConfiguracionForm
+from .models import ConfiguracionSistema
+
+@login_required
+def configuracion_view(request):
+    config = ConfiguracionSistema.get_config()
+    if request.method == 'POST':
+        form = ConfiguracionForm(request.POST, request.FILES, instance=config)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Configuración actualizada correctamente.")
+            return redirect('configuracion')
+    else:
+        form = ConfiguracionForm(instance=config)
+    return render(request, 'core/configuracion.html', {'form': form})
+
+
 @login_required
 def abrir_turno(request):
     if request.method == 'POST':

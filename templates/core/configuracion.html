@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Configuración del Sistema{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-body p-4">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label">Nombre de la Empresa</label>
+                    {{ form.nombre_empresa }}
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Color Primario</label>
+                    {{ form.color_primario }}
+                </div>
+                <div class="mb-3 form-check form-switch">
+                    {{ form.modo_oscuro }}
+                    <label class="form-check-label">Modo Oscuro</label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Logo</label>
+                    {{ form.logo }}
+                </div>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

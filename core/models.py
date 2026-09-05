@@ -34,3 +34,21 @@ class TurnoCaja(models.Model):
 
     def __str__(self):
         return f"Turno {self.id} - {self.usuario.username} ({self.estado})"
+
+class ConfiguracionSistema(models.Model):
+    nombre_empresa = models.CharField(max_length=100, default="Impulso Smart")
+    color_primario = models.CharField(max_length=7, default="#4318ff")
+    modo_oscuro = models.BooleanField(default=False)
+    logo = models.ImageField(upload_to='logos/', blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Configuración del Sistema"
+
+    def __str__(self):
+        return self.nombre_empresa
+
+    @classmethod
+    def get_config(cls):
+        config, created = cls.objects.get_or_create(id=1)
+        return config
+
