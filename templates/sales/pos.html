@@ -1,5 +1,18 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
+<!-- SPEC-SYNC-05: indicador de modo sin conexión / sincronización -->
+<div id="offline-indicator" class="alert alert-danger border-0 shadow-sm fw-bold d-none sticky-top" role="status">
+    <i class="bi bi-wifi-off me-2"></i><span id="offline-indicator-text"></span>
+</div>
+{% if session_from_previous_day %}
+<div class="alert alert-warning border-0 shadow-sm d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-exclamation-triangle me-1"></i> La caja #{{ active_session.id }} está abierta desde el {{ active_session.start_date|date:"d/m/Y H:i" }}. Podés seguir vendiendo en ella o cerrarla.</span>
+    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill" data-bs-toggle="modal" data-bs-target="#closeCashPosModal">
+        <i class="bi bi-lock me-1"></i>Cerrar caja
+    </button>
+</div>
+{% endif %}
 {% if last_sale_id %}
     <script>
         window.open("{% url 'sales:export_thermal_ticket' pk=last_sale_id %}", "_blank");
@@ -24,7 +37,7 @@
                     <div class="card-body">
                         <h5 class="card-title fw-bold">{{ product.name }}</h5>
                         <p class="card-text fs-5 fw-bold text-primary">${{ product.price }}</p>
-                        <p class="card-text opacity-75 small">Stock: {{ product.stock }} | SKU: {{ product.sku }}</p>
+                        <p class="card-text opacity-75 small">Stock: {{ product.stock|floatformat:"-3" }}{% if product.stock <= 0 %} <span class="badge bg-warning-subtle text-warning-emphasis">sin carga</span>{% endif %} | SKU: {{ product.sku }}</p>
                         <button class="btn btn-primary btn-sm w-100 rounded-pill add-to-cart" 
                             data-id="{{ product.id }}"
                             data-name="{{ product.name }}" 
@@ -130,6 +143,7 @@
         <form method="post" id="pos-form">
             {% csrf_token %}
             <input type="hidden" name="cart_data" id="cart-data">
+            <input type="hidden" name="client_uuid" id="client-uuid">
             <input type="hidden" name="price_list" id="form-price-list" value="default">
             <input type="hidden" name="customer_id" id="form-customer-id">
             <input type="hidden" name="points_redeemed" id="form-points-redeemed">
@@ -140,6 +154,33 @@
         </form>
     </div>
 </div>
+
+{% if session_from_previous_day %}
+<!-- Cierre rápido de caja abierta desde un día anterior -->
+<div class="modal fade" id="closeCashPosModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form action="{% url 'finance:close_cash' %}" method="post" class="modal-content border-0 shadow-lg rounded-4">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'sales:pos' %}">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">Cerrar Caja #{{ active_session.id }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <label class="form-label small fw-bold">Efectivo contado en caja</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light">$</span>
+                    <input type="number" name="real_amount" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01">
+                </div>
+                <input type="text" name="notes" class="form-control border-0 bg-light" placeholder="Observaciones (opcional)">
+            </div>
+            <div class="modal-footer border-0 p-4 pt-0">
+                <button type="submit" class="btn btn-danger w-100 rounded-pill fw-bold">CERRAR CAJA</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 
 <!-- Modal Nuevo Cliente Rápido -->
 <div class="modal fade" id="newCustomerModal" tabindex="-1">
@@ -380,8 +421,25 @@
         });
     });
     
+    // Usado por pos-offline.js tras guardar una venta localmente
+    window.posResetSale = function () {
+        cart = [];
+        document.getElementById('discount-input').value = 0;
+        document.getElementById('surcharge-input').value = 0;
+        resetPoints();
+    };
+
     // Inicializar
     document.getElementById('form-customer-id').value = customerSelect.value;
     document.getElementById('form-price-list').value = priceListSelect.value;
 </script>
+<script>
+    window.POS_OFFLINE_CONFIG = {
+        posUrl: "{% url 'sales:pos' %}",
+        swUrl: "{% url 'sales:service_worker' %}",
+        catalogUrl: "{% url 'sales:pos_catalog' %}",
+        syncUrl: "{% url 'sales_sync' %}"
+    };
+</script>
+<script src="{% static 'js/pos-offline.js' %}"></script>
 {% endblock %}

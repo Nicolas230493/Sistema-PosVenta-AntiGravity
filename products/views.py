@@ -8,6 +8,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.db.models.functions import ExtractHour
 from datetime import timedelta
+import math
 import os
 import json
 import pandas as pd
@@ -15,6 +16,7 @@ from decimal import Decimal
 
 from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail
 from .forms import ProductForm, InventoryMovementForm, CategoryForm
+from .importers import import_products, parse_decimal
 from sales.models import Sale, SaleDetail, SaleReturn, SaleReturnDetail
 from suppliers.models import Supplier
 from pos_system.settings import BASE_DIR
@@ -189,15 +191,16 @@ def stock_loss_create(request):
             reason = request.POST.get('reason')
             if qty <= 0:
                 raise ValueError("La cantidad debe ser mayor a cero.")
-            product = get_object_or_404(Product, id=product_id)
-            if product.stock >= qty:
-                StockLoss.objects.create(product=product, quantity=qty, reason=reason, user=request.user)
-                product.stock -= qty
-                product.save()
-                InventoryMovement.objects.create(product=product, quantity=qty, movement_type='OUT', reference=f"BAJA: {reason}", user=request.user)
-                messages.success(request, "Baja registrada.")
-            else:
-                messages.error(request, "Stock insuficiente.")
+            with transaction.atomic():
+                product = get_object_or_404(Product.objects.select_for_update(), id=product_id)
+                if product.stock >= qty:
+                    StockLoss.objects.create(product=product, quantity=qty, reason=reason, user=request.user)
+                    product.stock -= qty
+                    product.save()
+                    InventoryMovement.objects.create(product=product, quantity=qty, movement_type='OUT', reference=f"BAJA: {reason}", user=request.user)
+                    messages.success(request, "Baja registrada.")
+                else:
+                    messages.error(request, "Stock insuficiente.")
         except ValueError as e:
             messages.error(request, str(e))
     return redirect('products:product_list')
@@ -341,8 +344,8 @@ def order_assistant(request):
                 order = PurchaseOrder.objects.create(supplier_id=s_id)
                 total = 0
                 for p in prods:
-                    qty_to_order = (p.min_stock * 2) - p.stock # Sugerencia: reponer hasta el doble del mínimo
-                    if qty_to_order <= 0: qty_to_order = p.min_stock
+                    qty_to_order = math.ceil((p.min_stock * 2) - p.stock) # Sugerencia: reponer hasta el doble del mínimo
+                    if qty_to_order <= 0: qty_to_order = max(math.ceil(p.min_stock), 1)
                     PurchaseOrderDetail.objects.create(
                         order=order,
                         product=p,
@@ -387,7 +390,7 @@ def update_purchase_order_status(request, pk):
     if new_status == 'RECEIVED' and order.status != 'RECEIVED':
         with transaction.atomic():
             for detail in order.details.all():
-                product = detail.product
+                product = Product.objects.select_for_update().get(pk=detail.product_id)
                 product.stock += detail.quantity
                 product.cost_price = detail.estimated_cost
                 product.save()
@@ -406,7 +409,7 @@ def update_purchase_order_status(request, pk):
     elif new_status == 'PAID' and order.status == 'RECEIVED':
         # Impactar en caja (egreso)
         from finance.models import CashSession, CashExpense
-        session = CashSession.objects.filter(is_open=True, user=request.user).first()
+        session = CashSession.get_active()
         if not session:
             messages.error(request, "Debes tener una caja abierta para marcar como PAGADA e impactar el egreso.")
             return redirect('products:purchase_order_list')
@@ -485,62 +488,24 @@ def export_inventory_excel(request):
         df.to_excel(writer, index=False)
     return response
 
+MAX_IMPORT_WARNINGS = 20
+
 @login_required
 def import_inventory_excel(request):
-    if request.method == 'POST' and request.FILES.get('excel_file'):
-        file = request.FILES['excel_file']
+    """Importa productos desde CSV o Excel sin abortar nunca la petición (SPEC-IMP-04)."""
+    uploaded = request.FILES.get('excel_file') or request.FILES.get('file')
+    if request.method == 'POST' and uploaded:
         try:
-            df = pd.read_excel(file)
-            
-            # Mapeo de nombres de columnas (soporta tanto nombres de exportación como amigables)
-            column_mapping = {
-                'Nombre': 'name', 'name': 'name',
-                'SKU': 'sku', 'sku': 'sku',
-                'P. Venta': 'price', 'price': 'price',
-                'P. Costo': 'cost_price', 'cost_price': 'cost_price',
-                'Stock': 'stock', 'stock': 'stock',
-                'Stock Minimo': 'min_stock', 'min_stock': 'min_stock',
-                'Proveedor': 'supplier', 'supplier__name': 'supplier',
-                'Categoria': 'category', 'category__name': 'category',
-                'Descripcion': 'description', 'description': 'description'
-            }
-            
-            # Normalizar columnas del DataFrame
-            df.columns = [column_mapping.get(c, c) for c in df.columns]
-            
-            imported_count = 0
-            for _, row in df.iterrows():
-                # Buscar o crear proveedor
-                supplier = None
-                if 'supplier' in row and pd.notna(row['supplier']):
-                    supplier, _ = Supplier.objects.get_or_create(name=str(row['supplier']))
-                
-                # Buscar o crear categoría
-                category = None
-                if 'category' in row and pd.notna(row['category']):
-                    category, _ = Category.objects.get_or_create(name=str(row['category']))
-
-                # Preparar datos
-                defaults = {}
-                if 'price' in row: defaults['price'] = Decimal(str(row['price']))
-                if 'cost_price' in row: defaults['cost_price'] = Decimal(str(row['cost_price']))
-                if 'stock' in row: defaults['stock'] = int(row['stock'])
-                if 'min_stock' in row: defaults['min_stock'] = int(row['min_stock'])
-                if 'description' in row: defaults['description'] = str(row['description'])
-                if supplier: defaults['supplier'] = supplier
-                if category: defaults['category'] = category
-
-                # Usar SKU como llave principal si existe, si no, el nombre
-                if 'sku' in row and pd.notna(row['sku']):
-                    Product.objects.update_or_create(sku=str(row['sku']), defaults={'name': row['name'], **defaults})
-                else:
-                    Product.objects.update_or_create(name=row['name'], defaults=defaults)
-                
-                imported_count += 1
-                
-            messages.success(request, f"Importación completada: {imported_count} productos procesados.")
+            created, updated, warnings = import_products(uploaded)
         except Exception as e:
-            messages.error(request, f"Error al importar: {str(e)}")
+            messages.error(request, f"No se pudo leer el archivo: {e}")
+            return redirect('products:product_list')
+
+        for warning in warnings[:MAX_IMPORT_WARNINGS]:
+            messages.warning(request, warning)
+        if len(warnings) > MAX_IMPORT_WARNINGS:
+            messages.warning(request, f"... y {len(warnings) - MAX_IMPORT_WARNINGS} filas omitidas más.")
+        messages.success(request, f"Importación completada: {created} productos creados, {updated} actualizados, {len(warnings)} filas omitidas.")
     return redirect('products:product_list')
 
 @login_required
@@ -562,8 +527,8 @@ def purchase_create(request):
                 purchase = Purchase.objects.create(supplier_id=supplier_id, invoice_number=invoice_number, user=request.user)
                 total = 0
                 for item in items:
-                    product = Product.objects.get(id=item['product_id'])
-                    qty, cost = int(item['qty']), Decimal(item['cost'])
+                    product = Product.objects.select_for_update().get(id=item['product_id'])
+                    qty, cost = int(item['qty']), Decimal(str(item['cost']))
                     if qty <= 0 or cost < 0:
                         raise Exception("Las cantidades deben ser mayores a cero y los costos no pueden ser negativos.")
                     subtotal = qty * cost
@@ -585,7 +550,7 @@ def purchase_create(request):
 def stock_entry_scanner(request):
     if request.method == 'POST':
         barcode = request.POST.get('barcode')
-        qty = int(request.POST.get('quantity', 1))
+        qty = parse_decimal(request.POST.get('quantity', '1'), default=Decimal('0'))
         if qty <= 0:
             messages.error(request, "La cantidad debe ser mayor a cero.")
             return redirect('products:stock_entry_scanner')
@@ -594,6 +559,7 @@ def stock_entry_scanner(request):
         
         if product:
             with transaction.atomic():
+                product = Product.objects.select_for_update().get(pk=product.pk)
                 product.stock += qty
                 product.save()
                 

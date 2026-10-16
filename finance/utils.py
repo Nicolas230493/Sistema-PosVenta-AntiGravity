@@ -2,8 +2,9 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib import colors
+from django.utils import timezone
 
-def generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses):
+def generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses, stock_summary=None):
     """Genera un reporte de cierre de caja (Arqueo de Caja / X-Read)"""
     p = canvas.Canvas(response, pagesize=A4)
     width, height = A4
@@ -14,10 +15,10 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
     p.drawString(margin, height - margin, "REPORTE DE CIERRE DE CAJA")
     
     p.setFont("Helvetica", 10)
-    p.drawString(margin, height - margin - 0.8*cm, f"Cajero: {session.user.username}")
-    p.drawString(margin, height - margin - 1.3*cm, f"Apertura: {session.start_date.strftime('%d/%m/%Y %H:%M')}")
-    if not session.is_open:
-        p.drawString(margin, height - margin - 1.8*cm, f"Cierre: {session.end_date.strftime('%d/%m/%Y %H:%M')}")
+    p.drawString(margin, height - margin - 0.8*cm, f"Cajero: {session.user.username if session.user else 'N/A'}")
+    p.drawString(margin, height - margin - 1.3*cm, f"Apertura: {timezone.localtime(session.start_date).strftime('%d/%m/%Y %H:%M')}")
+    if not session.is_open and session.end_date:
+        p.drawString(margin, height - margin - 1.8*cm, f"Cierre: {timezone.localtime(session.end_date).strftime('%d/%m/%Y %H:%M')}")
     else:
         p.drawString(margin, height - margin - 1.8*cm, "Estado: CAJA ABIERTA (Resumen Parcial)")
     
@@ -47,7 +48,7 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
     p.drawRightString(width - margin, y, f"${session.expected_final_amount}")
     y -= 0.8 * cm
     
-    if not session.is_open:
+    if not session.is_open and session.real_final_amount is not None:
         p.drawString(margin, y, "TOTAL REAL (ARQUEO):")
         p.drawRightString(width - margin, y, f"${session.real_final_amount}")
         y -= 0.6 * cm
@@ -103,5 +104,34 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
                 p.showPage()
                 y = height - margin
                 
+    # 4. Mercadería vendida vs. auto-ajustes por desposte / stock no cargado
+    if stock_summary:
+        if y < 5 * cm:
+            p.showPage()
+            y = height - margin
+        y -= 0.5 * cm
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(margin, y, "MERCADERÍA VENDIDA Y AUTO-AJUSTES")
+        p.line(margin, y - 0.2*cm, width - margin, y - 0.2*cm)
+        y -= 0.8 * cm
+
+        p.setFont("Helvetica-Bold", 9)
+        p.drawString(margin, y, "Producto")
+        p.drawRightString(width - margin - 4*cm, y, "Vendido")
+        p.drawRightString(width - margin, y, "Auto-ajuste")
+        y -= 0.4 * cm
+
+        p.setFont("Helvetica", 9)
+        for row in stock_summary:
+            unit = f" {row['unit']}" if row['unit'] else ""
+            p.drawString(margin, y, row['product'][:50])
+            p.drawRightString(width - margin - 4*cm, y, f"{row['sold']:.3f}{unit}")
+            p.drawRightString(width - margin, y, f"{row['auto_adjusted']:.3f}{unit}")
+            y -= 0.4 * cm
+            if y < 3*cm:
+                p.showPage()
+                y = height - margin
+                p.setFont("Helvetica", 9)
+
     p.showPage()
     p.save()

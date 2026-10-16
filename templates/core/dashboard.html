@@ -132,7 +132,7 @@
                         {% for p in por_reponer %}
                             <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent border-light">
                                 <span class="small fw-medium">{{ p.name }}</span>
-                                <span class="badge bg-warning bg-opacity-10 text-warning rounded-pill">{{ p.stock }} uni.</span>
+                                <span class="badge bg-warning bg-opacity-10 text-warning rounded-pill">{{ p.stock|floatformat:"-3" }} uni.</span>
                             </div>
                         {% empty %}
                             <div class="p-4 text-center opacity-75 small">Suficiente stock en todos los items</div>

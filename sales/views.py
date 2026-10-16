@@ -2,56 +2,23 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib import messages
 from django.db import transaction
-from django.http import HttpResponse, FileResponse
-from products.models import Product, InventoryMovement, PriceList, ProductPrice
+from django.http import HttpResponse, FileResponse, JsonResponse
+from django.views.decorators.http import require_POST
+from products.models import Product, PriceList, ProductPrice
 from customers.models import Customer
-from finance.models import PaymentMethod
-from core.models import ActivityLog, TurnoCaja
-from .models import Sale, SaleDetail, SaleReturn, SaleReturnDetail, Promotion
+from finance.models import CashSession, PaymentMethod
+from core.decorators import manager_required
+from .models import Sale, SaleReturn, SaleReturnDetail, Promotion
+from .services import SaleError, create_sale, DEFAULT_CUSTOMER_DNI
+from django.conf import settings
 from django.utils import timezone
 
 from .utils import generate_sale_pdf, generate_thermal_ticket, generate_total_sales_report
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
+SYNC_BATCH_LIMIT = 200
 
-def _money(value, default='0'):
-    return Decimal(str(value or default))
-
-
-def _apply_server_promotions(product, qty, unit_price, active_promos, today):
-    price = unit_price
-    django_day = today.weekday()
-
-    for promo in active_promos:
-        is_target = promo.products.filter(id=product.id).exists()
-        if not is_target and product.category_id:
-            is_target = promo.categories.filter(id=product.category_id).exists()
-        if not is_target:
-            continue
-
-        if promo.promo_type == 'PERCENT':
-            price -= price * (promo.discount_percentage / Decimal('100'))
-        elif promo.promo_type == 'DAY_DISCOUNT' and promo.day_of_week == django_day:
-            price -= price * (promo.discount_percentage / Decimal('100'))
-        elif promo.promo_type == 'FIXED_QTY' and promo.fixed_qty > 0 and qty >= promo.fixed_qty:
-            num_packs = qty // promo.fixed_qty
-            remainder = qty % promo.fixed_qty
-            price = ((num_packs * promo.fixed_price) + (remainder * unit_price)) / qty
-
-    return price.quantize(Decimal('0.01'))
-
-
-def _price_for_product(product, price_list_id):
-    if price_list_id and price_list_id != 'default':
-        custom_price = ProductPrice.objects.filter(
-            product=product,
-            price_list_id=price_list_id,
-            price_list__active=True
-        ).values_list('price', flat=True).first()
-        if custom_price is not None:
-            return custom_price
-    return product.price
 
 @login_required
 def export_sale_pdf(request, pk):
@@ -67,7 +34,7 @@ def export_thermal_ticket(request, pk):
     buffer = generate_thermal_ticket(sale)
     return FileResponse(buffer, as_attachment=False, filename=f"Ticket_{sale.id}.pdf")
 
-@login_required
+@manager_required
 def export_consolidated_report(request):
     sales = Sale.objects.all().order_by('-fecha_hora')
     buffer = generate_total_sales_report(sales)
@@ -76,23 +43,50 @@ def export_consolidated_report(request):
 @login_required
 @permission_required('sales.add_sale', raise_exception=True)
 def pos_view(request):
-    # Validar turno de caja activo
-    active_turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
-    if not active_turno:
-        messages.warning(request, "Debes abrir un turno de caja antes de realizar ventas.")
-        return redirect('dashboard')
+    # SPEC-POS-03: el turno activo se determina solo por estado, nunca por fecha
+    active_session = CashSession.get_active()
 
-    products = Product.objects.filter(stock__gt=0)
+    if request.method == 'POST':
+        is_ajax = request.headers.get('X-POS-Ajax') == '1'
+        try:
+            sale, created = create_sale(
+                user=request.user,
+                cart=request.POST.get('cart_data'),
+                customer_id=request.POST.get('customer_id'),
+                payment_method_id=request.POST.get('payment_method'),
+                price_list_id=request.POST.get('price_list'),
+                discount_amount=request.POST.get('discount_amount'),
+                surcharge_amount=request.POST.get('surcharge_amount'),
+                points_redeemed=request.POST.get('points_redeemed'),
+                client_uuid=request.POST.get('client_uuid'),
+            )
+            request.session['last_sale_id'] = sale.id
+            if created:
+                messages.success(request, f"Venta #{sale.id} registrada ({sale.payment_method.name}).")
+            else:
+                messages.info(request, f"Venta #{sale.id} ya estaba registrada.")
+            if is_ajax:
+                return JsonResponse({'ok': True, 'sale_id': sale.id, 'created': created})
+        except SaleError as e:
+            messages.error(request, f"Error al procesar venta: {e}")
+            if is_ajax:
+                return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+        return redirect('sales:pos')
+
+    if not active_session:
+        return render(request, 'sales/pos_no_session.html')
+
+    products = Product.objects.all().order_by('name')
     customers = Customer.objects.all()
     payment_methods = PaymentMethod.objects.filter(active=True)
     price_lists = PriceList.objects.filter(active=True)
-    default_customer = Customer.objects.filter(dni_cuit='00000000').first()
+    default_customer = Customer.objects.filter(dni_cuit=DEFAULT_CUSTOMER_DNI).first()
     last_sale_id = request.session.pop('last_sale_id', None)
-    
-    # Promociones Activas
+    has_messages = len(messages.get_messages(request)) > 0
+
     today = timezone.localdate()
     active_promos = Promotion.objects.filter(active=True, start_date__lte=today, end_date__gte=today)
-    
+
     # Preparar datos de promociones para JS
     promos_data = []
     for p in active_promos:
@@ -108,162 +102,110 @@ def pos_view(request):
             'category_ids': list(p.categories.values_list('id', flat=True))
         })
 
-    if request.method == 'POST':
-        try:
-            cart_data = request.POST.get('cart_data')
-            customer_id = request.POST.get('customer_id')
-            payment_method_id = request.POST.get('payment_method')
-            price_list_id = request.POST.get('price_list')
-            discount_amount = _money(request.POST.get('discount_amount'))
-            surcharge_amount = _money(request.POST.get('surcharge_amount'))
-            points_to_redeem = int(request.POST.get('points_redeemed', 0) or 0)
-
-            if not cart_data:
-                raise ValueError("No se enviaron datos del carrito.")
-
-            cart = json.loads(cart_data)
-            if not cart:
-                raise ValueError("El carrito está vacío.")
-
-            if discount_amount < 0 or surcharge_amount < 0:
-                raise ValueError("Descuentos y recargos no pueden ser negativos.")
-            if points_to_redeem < 0:
-                raise ValueError("Los puntos a canjear no pueden ser negativos.")
-
-            if not payment_method_id:
-                raise ValueError("Debe seleccionar un método de pago.")
-
-            customer = Customer.objects.get(id=customer_id) if customer_id else default_customer
-            payment_method = PaymentMethod.objects.get(id=payment_method_id)
-            points_discount = Decimal(points_to_redeem)
-
-            # Validación de Puntos
-            if points_to_redeem > 0:
-                if not customer:
-                    raise ValueError("Debe seleccionar un cliente para canjear puntos.")
-                if customer.points < points_to_redeem:
-                    raise ValueError(f"El cliente no tiene suficientes puntos ({customer.points}).")
-
-            with transaction.atomic():
-                # Re-verificar turno activo dentro de la transacción
-                active_turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
-                if not active_turno:
-                    raise Exception("Turno de caja cerrado durante la transacción.")
-
-                sale_items = []
-                total_items = Decimal('0.00')
-                total_tax = Decimal('0.00')
-                total_promo_disc = Decimal('0.00')
-
-                for item in cart:
-                    product = Product.objects.select_for_update().get(id=item['id'])
-                    qty = int(item['qty'])
-                    if qty <= 0:
-                        raise Exception("La cantidad vendida debe ser mayor a cero.")
-                    if product.stock < qty:
-                        raise Exception(f"Stock insuficiente para {product.name}")
-
-                    original_price = _price_for_product(product, price_list_id)
-                    price = _apply_server_promotions(product, qty, original_price, active_promos, today)
-                    promo_savings = (original_price - price) * qty
-                    subtotal = price * qty
-                    tax_rate = product.tax_rate
-                    tax_item = subtotal - (subtotal / (1 + (tax_rate / 100)))
-
-                    total_items += subtotal
-                    total_tax += tax_item
-                    total_promo_disc += promo_savings
-                    sale_items.append((product, qty, price, tax_rate, tax_item, subtotal))
-
-                final_total = total_items - discount_amount - points_discount + surcharge_amount
-                if final_total < 0:
-                    raise Exception("El total de la venta no puede ser negativo.")
-
-                # Validación de Límite de Crédito
-                if payment_method.name == 'Cuenta Corriente' and customer:
-                    if customer.limite_credito > 0: # 0 significa sin límite o sin crédito habilitado
-                        if (customer.balance + final_total) > customer.limite_credito:
-                            raise Exception(f"Límite de crédito excedido. Saldo actual: ${customer.balance}, Límite: ${customer.limite_credito}")
-                    elif customer.dni_cuit == '00000000':
-                        raise Exception("No se puede fiar al Consumidor Final.")
-
-                sale = Sale.objects.create(
-                    user=request.user,
-                    customer=customer,
-                    turno=active_turno,
-                    total_amount=final_total,
-                    tax_amount=total_tax,
-                    discount_amount=discount_amount,
-                    points_redeemed=points_to_redeem,
-                    points_discount=points_discount,
-                    promo_discount=total_promo_disc,
-                    surcharge_amount=surcharge_amount,
-                    payment_method=payment_method
-                )
-                
-                # Descontar puntos del cliente si hubo canje
-                if points_to_redeem > 0:
-                    customer.points -= points_to_redeem
-                    customer.save()
-                    ActivityLog.objects.create(
-                        user=request.user,
-                        action=f"Canje de {points_to_redeem} puntos - Venta #{sale.id}",
-                        module="Fidelización",
-                        details=f"Cliente: {customer.full_name}, Descuento: ${points_discount}"
-                    )
-
-                for product, qty, price, tax_rate, tax_item, subtotal in sale_items:
-                    product.stock -= qty
-                    product.save()
-                    
-                    SaleDetail.objects.create(
-                        sale=sale,
-                        product=product,
-                        quantity=qty,
-                        price=price,
-                        cost_price_at_sale=product.cost_price,
-                        tax_rate=tax_rate,
-                        tax_amount=tax_item,
-                        subtotal=subtotal
-                    )
-                    
-                    InventoryMovement.objects.create(
-                        product=product,
-                        quantity=qty,
-                        movement_type='OUT',
-                        reference=f"Venta #{sale.id}",
-                        user=request.user
-                    )
-                
-                request.session['last_sale_id'] = sale.id
-                messages.success(request, f"Venta #{sale.id} registrada ({payment_method.name}).")
-                return redirect('sales:pos')
-                
-        except Exception as e:
-            messages.error(request, f"Error al procesar venta: {str(e)}")
-            return redirect('sales:pos')
-            
-    # Preparar datos de precios especiales para el JS
     product_prices = {}
     for pp in ProductPrice.objects.filter(price_list__active=True):
-        if pp.product_id not in product_prices:
-            product_prices[pp.product_id] = {}
-        product_prices[pp.product_id][pp.price_list_id] = float(pp.price)
+        product_prices.setdefault(pp.product_id, {})[pp.price_list_id] = float(pp.price)
 
-    return render(request, 'sales/pos.html', {
+    response = render(request, 'sales/pos.html', {
         'products': products,
         'customers': customers,
         'payment_methods': payment_methods,
         'price_lists': price_lists,
         'default_customer': default_customer,
         'last_sale_id': last_sale_id,
+        'active_session': active_session,
+        'session_from_previous_day': timezone.localtime(active_session.start_date).date() < today,
         'product_prices_json': json.dumps(product_prices),
         'promotions_json': json.dumps(promos_data)
     })
+    # Las respuestas con mensajes o ticket pendiente no deben quedar en la caché offline
+    if last_sale_id or has_messages:
+        response['X-POS-No-Cache'] = '1'
+    return response
+
+
+@login_required
+def pos_catalog(request):
+    """Catálogo JSON para la copia local (IndexedDB) del POS offline."""
+    products = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku,
+            'barcode': p.barcode or '',
+            'unit': p.unit,
+            'price': str(p.price),
+            'stock': str(p.stock),
+            'category_id': p.category_id,
+        }
+        for p in Product.objects.all().order_by('name')
+    ]
+    return JsonResponse({'generated_at': timezone.now().isoformat(), 'products': products})
+
+
+@login_required
+@permission_required('sales.add_sale', raise_exception=True)
+@require_POST
+def sync_sales(request):
+    """
+    SPEC-SYNC-05 §6.2: recibe el lote de ventas guardadas offline.
+    Idempotente por client_uuid; cada venta se procesa en su propia transacción.
+    """
+    try:
+        payload = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'error': 'JSON inválido.'}, status=400)
+
+    batch = payload.get('sales') if isinstance(payload, dict) else None
+    if not isinstance(batch, list):
+        return JsonResponse({'error': "Se esperaba la clave 'sales' con una lista."}, status=400)
+    if len(batch) > SYNC_BATCH_LIMIT:
+        return JsonResponse({'error': f'Máximo {SYNC_BATCH_LIMIT} ventas por lote.'}, status=400)
+
+    results = []
+    for entry in batch:
+        if not isinstance(entry, dict):
+            results.append({'client_uuid': None, 'status': 'error', 'error': 'Formato de venta inválido.'})
+            continue
+        client_uuid = entry.get('client_uuid')
+        if not client_uuid:
+            results.append({'client_uuid': None, 'status': 'error', 'error': 'Falta client_uuid.'})
+            continue
+        try:
+            sale, created = create_sale(
+                user=request.user,
+                cart=entry.get('cart'),
+                customer_id=entry.get('customer_id'),
+                payment_method_id=entry.get('payment_method'),
+                price_list_id=entry.get('price_list'),
+                discount_amount=entry.get('discount_amount'),
+                surcharge_amount=entry.get('surcharge_amount'),
+                points_redeemed=entry.get('points_redeemed'),
+                client_uuid=client_uuid,
+                client_created_at=entry.get('created_at'),
+            )
+            results.append({
+                'client_uuid': client_uuid,
+                'status': 'created' if created else 'duplicate',
+                'sale_id': sale.id,
+            })
+        except SaleError as e:
+            results.append({'client_uuid': client_uuid, 'status': 'error', 'error': str(e)})
+
+    return JsonResponse({'results': results})
+
+
+@login_required
+def service_worker(request):
+    """Sirve el Service Worker con alcance /pos/ (debe vivir bajo esa ruta)."""
+    sw_path = settings.BASE_DIR / 'static' / 'js' / 'pos-sw.js'
+    response = HttpResponse(sw_path.read_text(encoding='utf-8'), content_type='application/javascript')
+    response['Cache-Control'] = 'no-cache'
+    return response
 
 @login_required
 def sale_list(request):
-    sales = Sale.objects.all().order_by('-fecha_hora')
+    sales = Sale.objects.select_related('user', 'customer', 'payment_method', 'cash_session').order_by('-fecha_hora')
     return render(request, 'sales/sale_list.html', {'sales': sales})
 
 @login_required
@@ -292,7 +234,7 @@ def whatsapp_ticket(request, pk):
 
 from core.models import ActivityLog
 
-@login_required
+@manager_required
 def sale_return(request, pk):
     sale = get_object_or_404(Sale, pk=pk)
     if request.method == 'POST':
@@ -308,7 +250,12 @@ def sale_return(request, pk):
                 
                 return_details_text = []
                 for detail in sale.details.all():
-                    qty_to_return = int(request.POST.get(f'qty_{detail.id}', 0))
+                    try:
+                        qty_to_return = Decimal(request.POST.get(f'qty_{detail.id}') or '0')
+                    except InvalidOperation:
+                        raise Exception(f"Cantidad inválida para {detail.product.name}")
+                    if qty_to_return < 0:
+                        raise Exception("La cantidad a devolver no puede ser negativa.")
                     if qty_to_return > 0:
                         if qty_to_return > detail.quantity:
                             raise Exception(f"No se puede devolver más de lo vendido ({detail.product.name})")

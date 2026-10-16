@@ -4,11 +4,14 @@ from products.models import Product
 from customers.models import Customer
 from finance.models import PaymentMethod
 from core.models import TurnoCaja
+from finance.models import CashSession
 
 class Sale(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)
     turno = models.ForeignKey(TurnoCaja, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Turno de Caja")
+    cash_session = models.ForeignKey(CashSession, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales', verbose_name="Sesión de Caja")
+    client_uuid = models.UUIDField(null=True, blank=True, unique=True, verbose_name="UUID Cliente (Offline)")
     fecha_hora = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Total")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto IVA")
@@ -35,7 +38,7 @@ class Sale(models.Model):
 class SaleDetail(models.Model):
     sale = models.ForeignKey(Sale, related_name='details', on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True)
-    quantity = models.IntegerField(verbose_name="Cantidad")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Cantidad")
     peso_kg = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Peso (kg)")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
     cost_price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo (Histórico)")
@@ -65,7 +68,7 @@ class SaleReturn(models.Model):
 class SaleReturnDetail(models.Model):
     sale_return = models.ForeignKey(SaleReturn, related_name='details', on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
-    quantity = models.IntegerField(verbose_name="Cantidad Devuelta")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Cantidad Devuelta")
     price_at_return = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
 
     def __str__(self):

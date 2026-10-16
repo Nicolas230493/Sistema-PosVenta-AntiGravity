@@ -31,11 +31,11 @@ class Product(models.Model):
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Precio Venta")
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Precio Costo")
-    stock = models.IntegerField(default=0, validators=[MinValueValidator(0)], verbose_name="Stock")
-    min_stock = models.IntegerField(default=5, validators=[MinValueValidator(0)], verbose_name="Stock Mínimo")
+    stock = models.DecimalField(max_digits=10, decimal_places=3, default=0, validators=[MinValueValidator(0)], verbose_name="Stock")
+    min_stock = models.DecimalField(max_digits=10, decimal_places=3, default=5, validators=[MinValueValidator(0)], verbose_name="Stock Mínimo")
     expiry_date = models.DateField(null=True, blank=True, verbose_name="Fecha de Vencimiento")
     peso_kg = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Peso (kg)")
-    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, verbose_name="Proveedor")
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Proveedor")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -72,15 +72,17 @@ MOVEMENT_TYPES = [
     ('IN', 'Entrada'),
     ('OUT', 'Salida'),
     ('ADJ', 'Ajuste'),
+    ('AUTO_ADJUST_IN', 'Ajuste Automático por Venta'),
 ]
 
 class InventoryMovement(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='movements')
-    quantity = models.IntegerField(verbose_name="Cantidad")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Cantidad")
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Costo")
     sale_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Venta")
-    movement_type = models.CharField(max_length=3, choices=MOVEMENT_TYPES, verbose_name="Tipo")
+    movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES, verbose_name="Tipo")
     reference = models.CharField(max_length=100, verbose_name="Referencia", help_text="Ej: Venta #123, Compra Factura X, Ajuste")
+    reason = models.CharField(max_length=255, blank=True, default='', verbose_name="Motivo")
     date = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
 

@@ -42,9 +42,9 @@
                                 <td class="ps-4 fw-bold">{{ p.name }}</td>
                                 <td>{{ p.supplier.name|default:"Sin Proveedor" }}</td>
                                 <td class="text-center">
-                                    <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-3">{{ p.stock }}</span>
+                                    <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-3">{{ p.stock|floatformat:"-3" }}</span>
                                 </td>
-                                <td class="text-center opacity-75 small">{{ p.min_stock }}</td>
+                                <td class="text-center opacity-75 small">{{ p.min_stock|floatformat:"-3" }}</td>
                                 <td class="text-end pe-4">
                                     <a href="https://wa.me/{{ p.supplier.phone|default:'' }}?text=Hola%20{{ p.supplier.name }},%20necesito%20pedido%20de:%20{{ p.name }}%20(Stock%20actual:%20{{ p.stock }})" 
                                        target="_blank" class="btn btn-outline-success btn-sm rounded-pill px-3">

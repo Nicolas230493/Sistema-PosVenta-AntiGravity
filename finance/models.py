@@ -27,6 +27,11 @@ class CashSession(models.Model):
     is_open = models.BooleanField(default=True, verbose_name="¿Caja Abierta?")
     notes = models.TextField(null=True, blank=True, verbose_name="Observaciones")
 
+    @classmethod
+    def get_active(cls):
+        """SPEC-POS-03 §4.2: turno activo = última sesión abierta, sin filtrar por fecha ni usuario."""
+        return cls.objects.filter(is_open=True).order_by('-id').first()
+
     def __str__(self):
         return f"Caja {self.id} - {self.user.username if self.user else 'N/A'} ({'Abierta' if self.is_open else 'Cerrada'})"
 
@@ -34,6 +39,13 @@ class CashSession(models.Model):
         verbose_name = "Arqueo de Caja"
         verbose_name_plural = "Arqueos de Caja"
         ordering = ['-start_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_open'],
+                condition=models.Q(is_open=True),
+                name='unique_open_cash_session'
+            )
+        ]
 
 class CashExpense(models.Model):
     session = models.ForeignKey(CashSession, related_name='expenses', on_delete=models.CASCADE)

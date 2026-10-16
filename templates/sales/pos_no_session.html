@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block page_title %}Punto de Venta{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm text-center p-4 rounded-4">
+            <div class="card-body">
+                <div class="bg-light d-inline-block p-4 rounded-circle mb-3">
+                    <i class="bi bi-lock text-muted display-4"></i>
+                </div>
+                <h4 class="fw-bold">No hay ninguna caja abierta</h4>
+                <p class="text-muted mb-4">Indicá el efectivo inicial (cambio para el turno) para empezar a vender.</p>
+                <form action="{% url 'finance:open_cash' %}" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'sales:pos' %}">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text border-0 bg-light fs-4">$</span>
+                        <input type="number" name="amount" class="form-control form-control-lg border-0 bg-light text-center fw-bold" placeholder="0.00" required min="0" step="0.01" autofocus>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 rounded-pill py-3 fw-bold">ABRIR CAJA E INICIAR TURNO</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

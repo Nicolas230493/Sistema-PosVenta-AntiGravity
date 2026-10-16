@@ -76,3 +76,71 @@ class ProductStockValidationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
+
+
+class CsvImporterTests(TestCase):
+    """SPEC-IMP-04: importador tolerante a fallos."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='importer', password='pass12345', is_staff=True)
+        self.client.force_login(self.user)
+
+    def _upload(self, content, name='productos.csv', encoding='utf-8'):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        upload = SimpleUploadedFile(name, content.encode(encoding), content_type='text/csv')
+        return self.client.post(reverse('products:import_inventory_excel'), {'excel_file': upload}, follow=True)
+
+    def test_parse_decimal_sanitizes_formats(self):
+        from .importers import parse_decimal
+        self.assertEqual(parse_decimal('$ 1.234,50'), Decimal('1234.50'))
+        self.assertEqual(parse_decimal('1,234.50'), Decimal('1234.50'))
+        self.assertEqual(parse_decimal('0,350'), Decimal('0.350'))
+        self.assertEqual(parse_decimal('1.234.567'), Decimal('1234567'))
+        self.assertEqual(parse_decimal(''), Decimal('0.00'))
+        self.assertEqual(parse_decimal('abc'), Decimal('0.00'))
+
+    def test_header_normalization(self):
+        from .importers import map_header
+        self.assertEqual(map_header(' Precio Venta '), 'price')
+        self.assertEqual(map_header('precio_venta'), 'price')
+        self.assertEqual(map_header('PRECIO'), 'price')
+        self.assertEqual(map_header('Categoría'), 'category')
+
+    def test_latin1_semicolon_csv_with_bad_row_continues(self):
+        csv_text = (
+            "Nombre;Precio Venta;Stock;Categoría;Proveedor\n"
+            "Pechuga;$ 5.200,00;3,5;Pollería;Avícola Granja\n"
+            "Fila Rota;-10;1;;\n"
+            "Medialunas;1500;24;Panadería;\n"
+        )
+        response = self._upload(csv_text, encoding='latin-1')
+
+        self.assertEqual(response.status_code, 200)
+        pechuga = Product.objects.get(name='Pechuga')
+        self.assertEqual(pechuga.price, Decimal('5200.00'))
+        self.assertEqual(pechuga.stock, Decimal('3.500'))
+        self.assertEqual(pechuga.category.name, 'Pollería')
+        self.assertTrue(Product.objects.filter(name='Medialunas').exists())
+        self.assertFalse(Product.objects.filter(name='Fila Rota').exists())
+        warnings = [str(m) for m in response.context['messages']]
+        self.assertTrue(any(w.startswith('Fila 3 omitida') for w in warnings))
+
+    def test_comma_csv_updates_existing_product_by_sku(self):
+        Product.objects.create(sku='ABC1', name='Huevos', price=Decimal('10'))
+
+        self._upload("sku,precio,stock\nABC1,2500.50,30\n")
+
+        product = Product.objects.get(sku='ABC1')
+        self.assertEqual(product.price, Decimal('2500.50'))
+        self.assertEqual(product.stock, Decimal('30'))
+
+    def test_products_without_sku_get_unique_sku(self):
+        self._upload("nombre,precio\nProducto A,10\nProducto B,20\n")
+
+        skus = set(Product.objects.values_list('sku', flat=True))
+        self.assertEqual(len(skus), 2)
+
+    def test_product_supplier_is_optional(self):
+        product = Product.objects.create(sku='NOSUP', name='Sin proveedor', price=Decimal('1'))
+        self.assertIsNone(product.supplier)
+        self.assertTrue(Product._meta.get_field('supplier').blank)

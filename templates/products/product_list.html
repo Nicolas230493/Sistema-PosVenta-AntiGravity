@@ -56,8 +56,8 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-body-secondary small">Selecciona un archivo Excel (.xlsx) para importar o actualizar productos.</p>
-                <input type="file" name="excel_file" class="form-control" accept=".xlsx, .xls" required>
+                <p class="text-body-secondary small">Selecciona un archivo CSV (coma o punto y coma) o Excel (.xlsx) para importar o actualizar productos. Las filas con errores se omiten y se informan sin detener la carga.</p>
+                <input type="file" name="excel_file" class="form-control" accept=".csv, .txt, .xlsx, .xls" required>
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -114,8 +114,8 @@
                 </td>
                 <td>
                     <div class="d-flex justify-content-between mb-1 small">
-                        <span class="fw-medium text-{{ product.stock_status }}">{{ product.stock }} {{ product.get_unit_display }}</span>
-                        <span class="text-body-secondary text-xs">Mín: {{ product.min_stock }}</span>
+                        <span class="fw-medium text-{{ product.stock_status }}">{{ product.stock|floatformat:"-3" }} {{ product.get_unit_display }}</span>
+                        <span class="text-body-secondary text-xs">Mín: {{ product.min_stock|floatformat:"-3" }}</span>
                     </div>
                     <div class="progress progress-sm" style="height: 6px;">
                         <div class="progress-bar bg-{{ product.stock_status }}" 

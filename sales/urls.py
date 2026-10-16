@@ -5,6 +5,8 @@ app_name = 'sales'
 
 urlpatterns = [
     path('', views.pos_view, name='pos'),
+    path('sw.js', views.service_worker, name='service_worker'),
+    path('api/catalog/', views.pos_catalog, name='pos_catalog'),
     path('history/', views.sale_list, name='sale_list'),
     path('<int:pk>/return/', views.sale_return, name='sale_return'),
     path('<int:pk>/pdf/', views.export_sale_pdf, name='export_sale_pdf'),

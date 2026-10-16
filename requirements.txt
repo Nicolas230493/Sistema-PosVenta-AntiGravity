@@ -4,3 +4,9 @@ django-widget-tweaks
 python-dotenv
 pandas
 openpyxl
+python-barcode
+pillow
+whitenoise
+gunicorn
+dj-database-url
+psycopg2-binary

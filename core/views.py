@@ -52,7 +52,7 @@ def abrir_turno(request):
         monto_inicial = request.POST.get('monto_inicial', 0)
         TurnoCaja.objects.create(usuario=request.user, monto_inicial=monto_inicial)
         messages.success(request, "Turno abierto correctamente.")
-        return redirect('core:dashboard') # Asumiendo URL de dashboard
+        return redirect('dashboard') # Asumiendo URL de dashboard
     return render(request, 'core/abrir_turno.html')
 
 @login_required
@@ -60,7 +60,7 @@ def cerrar_turno(request):
     turno = TurnoCaja.objects.filter(usuario=request.user, estado='ABIERTO').first()
     if not turno:
         messages.error(request, "No hay turno abierto.")
-        return redirect('core:dashboard')
+        return redirect('dashboard')
     
     if request.method == 'POST':
         # Calcular monto final basado en ventas del turno
@@ -71,7 +71,7 @@ def cerrar_turno(request):
         turno.fecha_cierre = timezone.now()
         turno.save()
         messages.success(request, f"Turno cerrado. Total recaudado: ${monto_final}")
-        return redirect('core:dashboard')
+        return redirect('dashboard')
     return render(request, 'core/cerrar_turno.html', {'turno': turno})
 
 def cuenta_expirada(request):

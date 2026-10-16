@@ -62,6 +62,11 @@
                     <p class="small opacity-75">Iniciada por {{ session.user.username }}<br>{{ session.start_date|date:"d/m/Y H:i" }}</p>
                 </div>
             </div>
+            {% if session_from_previous_day %}
+            <div class="alert alert-warning border-0 shadow-sm small">
+                <i class="bi bi-exclamation-triangle me-1"></i> Esta caja quedó abierta desde un día anterior. Podés seguir operando o cerrarla con el botón de arqueo.
+            </div>
+            {% endif %}
             
             <div class="card border-0 shadow-sm mb-4">
                 <div class="card-body">
@@ -89,8 +94,23 @@
                         <h6 class="small fw-bold text-uppercase opacity-50 mb-2">Otros Medios (Tarjetas/QR)</h6>
                         {% for pay in other_payments %}
                         <div class="d-flex justify-content-between mb-1 small">
-                            <span>{{ pay.payment_method }}:</span>
+                            <span>{{ pay.payment_method__name|default:"Sin especificar" }}:</span>
                             <span class="fw-bold">${{ pay.total }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if stock_summary %}
+                    <div class="bg-light p-3 rounded-3 mt-3">
+                        <h6 class="small fw-bold text-uppercase opacity-50 mb-2">Vendido / Auto-ajustes por desposte</h6>
+                        {% for row in stock_summary %}
+                        <div class="d-flex justify-content-between mb-1 small">
+                            <span>{{ row.product }}</span>
+                            <span>
+                                <span class="fw-bold">{{ row.sold|floatformat:"-3" }} {{ row.unit }}</span>
+                                {% if row.auto_adjusted %}<span class="badge bg-warning-subtle text-warning-emphasis ms-1" title="Auto-ajuste">+{{ row.auto_adjusted|floatformat:"-3" }}</span>{% endif %}
+                            </span>
                         </div>
                         {% endfor %}
                     </div>
