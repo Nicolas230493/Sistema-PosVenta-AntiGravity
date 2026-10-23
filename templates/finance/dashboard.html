@@ -4,6 +4,11 @@
 
 {% block content %}
 <!-- Estadísticas de Rentabilidad (Utilidad Bruta) -->
+<div class="d-flex justify-content-end mb-2">
+    <a href="{% url 'finance:profit_report' %}" class="btn btn-sm btn-outline-primary rounded-pill">
+        <i class="bi bi-calculator me-1"></i>Ganancia Neta Real
+    </a>
+</div>
 <div class="row mb-4">
     <div class="col-md-3">
         <div class="card border-0 shadow-sm rounded-4">
@@ -116,6 +121,14 @@
                     </div>
                     {% endif %}
 
+                    {% if forced_adjustments %}
+                    <div class="alert alert-warning border-0 p-3 rounded-3 mt-3 mb-0 small">
+                        <i class="bi bi-exclamation-diamond me-1"></i>
+                        <strong>{{ forced_adjustments|length }}</strong> ajuste{{ forced_adjustments|length|pluralize }} forzoso{{ forced_adjustments|length|pluralize }} en este turno (ventas sin stock cargado).
+                        <a href="{% url 'finance:cash_session_report' pk=session.pk %}" class="alert-link">Ver detalle</a>
+                    </div>
+                    {% endif %}
+
                     <a href="{% url 'finance:export_cash_report' pk=session.pk %}" target="_blank" class="btn btn-outline-primary w-100 rounded-pill mt-3 btn-sm">
                         <i class="bi bi-file-earmark-pdf me-1"></i>Reporte Parcial (X)
                     </a>
@@ -203,7 +216,7 @@
                             <th class="ps-4">Fecha Cierre</th>
                             <th>Usuario</th>
                             <th>Esperado</th>
-                            <th>Real</th>
+                            <th>Declarado</th>
                             <th>Diferencia</th>
                             <th class="text-end pe-4">Acciones</th>
                         </tr>
@@ -217,17 +230,22 @@
                                 </td>
                                 <td>{{ s.user.username }}</td>
                                 <td>${{ s.expected_final_amount }}</td>
-                                <td class="fw-bold">${{ s.real_final_amount }}</td>
+                                <td class="fw-bold">${{ s.declared_cash|default:s.real_final_amount }}</td>
                                 <td>
-                                    {% if s.real_final_amount == s.expected_final_amount %}
+                                    {% if s.difference is None %}
+                                        <span class="badge bg-secondary-subtle text-secondary rounded-pill">Sin arqueo</span>
+                                    {% elif s.difference == 0 %}
                                         <span class="badge bg-success-subtle text-success rounded-pill">OK</span>
-                                    {% elif s.real_final_amount > s.expected_final_amount %}
-                                        <span class="badge bg-info-subtle text-info rounded-pill">Sobrante</span>
+                                    {% elif s.difference > 0 %}
+                                        <span class="badge bg-info-subtle text-info rounded-pill">Sobrante ${{ s.difference }}</span>
                                     {% else %}
-                                        <span class="badge bg-danger-subtle text-danger rounded-pill">Faltante</span>
+                                        <span class="badge bg-danger-subtle text-danger rounded-pill">Faltante ${{ s.difference }}</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end pe-4">
+                                    <a href="{% url 'finance:cash_session_report' pk=s.pk %}" class="btn btn-outline-primary btn-sm rounded-pill me-1">
+                                        <i class="bi bi-clipboard-data me-1"></i>Ver cierre
+                                    </a>
                                     <a href="{% url 'finance:whatsapp_report' pk=s.pk %}" class="btn btn-outline-success btn-sm rounded-pill me-1" target="_blank">
                                         <i class="bi bi-whatsapp me-1"></i>WhatsApp
                                     </a>
@@ -315,7 +333,12 @@
                     <label class="form-label fw-bold text-uppercase small opacity-75">Efectivo Real contado en caja</label>
                     <div class="input-group">
                         <span class="input-group-text border-0 bg-light fs-4">$</span>
-                        <input type="number" name="real_amount" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" required step="0.01">
+                        <input type="number" name="declared_cash" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" required min="0" step="0.01">
+                    </div>
+                    <label class="form-label fw-bold text-uppercase small opacity-75 mt-3">Total en comprobantes (Transferencia / QR / Tarjetas)</label>
+                    <div class="input-group">
+                        <span class="input-group-text border-0 bg-light">$</span>
+                        <input type="number" name="declared_digital" class="form-control border-0 bg-light text-center fw-bold" required min="0" step="0.01" value="0">
                     </div>
                     <div class="form-text mt-2">Cuenta todo el efectivo que tienes físicamente. Por seguridad, el sistema no mostrará el esperado hasta después del cierre.</div>
                 </div>

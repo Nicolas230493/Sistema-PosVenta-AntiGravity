@@ -24,6 +24,11 @@
                     <label class="form-label">Logo</label>
                     {{ form.logo }}
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">Días de alerta de vencimiento</label>
+                    {{ form.dias_alerta_vencimiento }}
+                    <div class="form-text">El Dashboard lista los productos que vencen dentro de este plazo o ya vencidos.</div>
+                </div>
                 <button type="submit" class="btn btn-primary rounded-pill px-4">Guardar Cambios</button>
             </form>
         </div>

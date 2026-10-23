@@ -33,7 +33,7 @@ _ALIAS_LOOKUP = {alias: field for field, aliases in PRODUCT_COLUMN_ALIASES.items
 UNIT_ALIASES = {
     'unidad': 'unidad', 'un': 'unidad', 'u': 'unidad', 'unid': 'unidad',
     'kg': 'kg', 'kilo': 'kg', 'kilos': 'kg', 'kilogramo': 'kg',
-    'lt': 'lt', 'l': 'lt', 'litro': 'lt', 'litros': 'lt',
+    'lt': 'litro', 'l': 'litro', 'litro': 'litro', 'litros': 'litro',
     'm': 'm', 'metro': 'm', 'caja': 'caja', 'paquete': 'paquete',
 }
 

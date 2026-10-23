@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Sale, SaleDetail, SaleReturn, SaleReturnDetail, Promotion
+from .models import Sale, SaleDetail, SalePayment, SaleReturn, SaleReturnDetail, Promotion
 
 @admin.register(Promotion)
 class PromotionAdmin(admin.ModelAdmin):
@@ -13,12 +13,16 @@ class SaleDetailInline(admin.TabularInline):
     extra = 0
     readonly_fields = ('subtotal',)
 
+class SalePaymentInline(admin.TabularInline):
+    model = SalePayment
+    extra = 0
+
 @admin.register(Sale)
 class SaleAdmin(admin.ModelAdmin):
-    list_display = ('id', 'customer', 'fecha_hora', 'total_amount', 'payment_method', 'user')
-    list_filter = ('fecha_hora', 'payment_method')
+    list_display = ('id', 'customer', 'fecha_hora', 'total_amount', 'payment_method', 'status', 'user')
+    list_filter = ('fecha_hora', 'status', 'payment_method')
     search_fields = ('id', 'customer__full_name')
-    inlines = [SaleDetailInline]
+    inlines = [SaleDetailInline, SalePaymentInline]
 
 class SaleReturnDetailInline(admin.TabularInline):
     model = SaleReturnDetail

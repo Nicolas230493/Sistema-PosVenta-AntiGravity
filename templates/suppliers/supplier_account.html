@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Cuenta Corriente — {{ supplier.name }}{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-body p-4">
+                <h4 class="fw-bold mb-1">{{ supplier.name }}</h4>
+                <div class="small opacity-75 mb-3">{{ supplier.phone|default:"Sin teléfono" }}</div>
+                <label class="small text-uppercase fw-bold opacity-75">Saldo adeudado</label>
+                <h2 class="fw-bold {% if supplier.balance > 0 %}text-danger{% else %}text-success{% endif %}">${{ supplier.balance }}</h2>
+            </div>
+        </div>
+
+        <form method="post" action="{% url 'suppliers:supplier_payment' pk=supplier.pk %}" class="card border-0 shadow-sm rounded-4 mb-4">
+            {% csrf_token %}
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Registrar pago</h6>
+                <label class="form-label small fw-bold">Monto</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light">$</span>
+                    <input type="number" name="amount" class="form-control border-0 bg-light" min="0.01" step="0.01" required {% if supplier.balance > 0 %}value="{{ supplier.balance|stringformat:'s' }}"{% endif %}>
+                </div>
+                <label class="form-label small fw-bold">Origen</label>
+                <select name="source" class="form-select border-0 bg-light mb-3">
+                    {% for value, label in sources %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+                <input type="text" name="notes" class="form-control border-0 bg-light mb-3" placeholder="Notas (opcional)">
+                <div class="form-text mb-3">Pagar desde Caja genera un egreso en el turno abierto (no se cuenta como gasto en la Ganancia Neta).</div>
+                <button type="submit" class="btn btn-primary w-100 rounded-pill fw-bold">Registrar pago</button>
+            </div>
+        </form>
+
+        {% if pending_debits %}
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Vencimientos de facturas</h6>
+                {% for m in pending_debits %}
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>{{ m.reference|default:"Factura" }}</span>
+                    <span class="{% if m.due_date < today %}text-danger fw-bold{% endif %}">{{ m.due_date|date:"d/m/Y" }} · ${{ m.amount }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-transparent border-0 pt-4 px-4">
+                <h5 class="fw-bold mb-0">Movimientos</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Fecha</th>
+                            <th>Concepto</th>
+                            <th>Vencimiento</th>
+                            <th class="text-end">Debe</th>
+                            <th class="text-end">Haber</th>
+                            <th class="text-end pe-4">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in movements %}
+                        <tr>
+                            <td class="ps-4 small">{{ m.date|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {{ m.reference|default:m.get_movement_type_display }}
+                                {% if m.payment_source %}<span class="badge bg-light text-muted border ms-1">{{ m.get_payment_source_display }}</span>{% endif %}
+                                {% if m.notes %}<div class="small opacity-75">{{ m.notes }}</div>{% endif %}
+                            </td>
+                            <td class="small">{{ m.due_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td class="text-end text-danger">{% if m.movement_type == 'DEBIT' %}${{ m.amount }}{% endif %}</td>
+                            <td class="text-end text-success">{% if m.movement_type == 'CREDIT' %}${{ m.amount }}{% endif %}</td>
+                            <td class="text-end pe-4 fw-bold">${{ m.balance_after }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center py-5 opacity-50">Sin movimientos. Las órdenes de compra recibidas generan deuda automáticamente.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

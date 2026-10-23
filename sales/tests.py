@@ -146,7 +146,7 @@ class POSTestCase(TestCase):
             product=self.product,
             quantity=1,
             price=Decimal('100.00'),
-            cost_price_at_sale=Decimal('60.00'),
+            unit_cost=Decimal('60.00'),
             tax_rate=Decimal('21.00'),
             tax_amount=Decimal('17.36'),
             subtotal=Decimal('100.00'),
@@ -349,3 +349,291 @@ class OfflineSyncTests(TestCase):
 
         sw = self.client.get(reverse('sales:service_worker'))
         self.assertEqual(sw['Content-Type'], 'application/javascript')
+
+    def test_sale_cancellation_reverts_stock_with_sale_cancel_in(self):
+        from sales.services import cancel_sale
+        # Venta de producto con stock inicial
+        prod = Product.objects.create(
+            sku='POLLO_CANC',
+            name='Pollo Anulacion',
+            unit='kg',
+            price=Decimal('2000.00'),
+            cost_price=Decimal('1200.00'),
+            stock=Decimal('10.000'),
+        )
+        cart = [{'id': prod.id, 'qty': 1, 'weight': '3.000'}]
+        # Registrar venta por POS
+        sale_res = self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps(cart),
+            'payment_method': str(self.cash.id),
+        }, follow=True)
+        self.assertEqual(sale_res.status_code, 200)
+
+        prod.refresh_from_db()
+        self.assertEqual(prod.stock, Decimal('7.000')) # 10 - 3
+
+        sale = Sale.objects.order_by('-id').first()
+        self.assertFalse(sale.is_cancelled)
+
+        # Hacer usuario staff/superuser para pasar manager_required
+        self.user.is_superuser = True
+        self.user.save()
+
+        # Anular la venta
+        cancel_res = self.client.post(reverse('sales:sale_cancel', kwargs={'pk': sale.pk}), {
+            'reason': 'Error de carga en mostrador',
+        }, follow=True)
+        self.assertEqual(cancel_res.status_code, 200)
+
+        sale.refresh_from_db()
+        self.assertTrue(sale.is_cancelled)
+        self.assertEqual(sale.cancel_reason, 'Error de carga en mostrador')
+
+        # El stock debe haberse revertido exactamente
+        prod.refresh_from_db()
+        self.assertEqual(prod.stock, Decimal('10.000'))
+
+        # Se debe haber generado un movimiento SALE_CANCEL_IN
+        cancel_mov = InventoryMovement.objects.filter(product=prod, movement_type='SALE_CANCEL_IN').first()
+        self.assertIsNotNone(cancel_mov)
+        self.assertEqual(cancel_mov.quantity, Decimal('3.000'))
+        self.assertEqual(cancel_mov.type, 'SALE_CANCEL_IN')
+
+    def test_discrete_units_reject_fractional_sale_in_pos(self):
+        prod = Product.objects.create(
+            sku='MAPLE_HUEVOS',
+            name='Maple de Huevos',
+            unit='unidad',
+            price=Decimal('3000.00'),
+            stock=Decimal('10.000'),
+        )
+        cart = [{'id': prod.id, 'qty': '1.5'}]
+        response = self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps(cart),
+            'payment_method': str(self.cash.id),
+        }, follow=True)
+        self.assertContains(response, 'no admite decimales')
+        prod.refresh_from_db()
+        self.assertEqual(prod.stock, Decimal('10.000')) # Intacto
+
+
+class MixedPaymentAndReservationTests(TestCase):
+    """SPEC-POS-08: pagos mixtos, señas/apartados y ticket térmico. SPEC-FIN-06 §6.2: costo congelado."""
+
+    def setUp(self):
+        from products.models import PriceList, ProductPrice
+        self.user = User.objects.create_user(username='cajero_mix', password='pass12345')
+        self.user.user_permissions.add(Permission.objects.get(codename='add_sale', content_type__app_label='sales'))
+        self.client.force_login(self.user)
+        self.cash = PaymentMethod.objects.create(name='Efectivo')
+        self.transfer = PaymentMethod.objects.create(name='Transferencia', is_digital=True)
+        self.current_account = PaymentMethod.objects.create(name='Cuenta Corriente')
+        self.session = CashSession.objects.create(user=self.user, initial_amount=Decimal('0'))
+        self.customer = Customer.objects.create(full_name='Cliente Mix', dni_cuit='30111222')
+        self.product = Product.objects.create(
+            sku='PECHU', name='Pechuga', unit='kg', price=Decimal('5000.00'),
+            cost_price=Decimal('3000.00'), stock=Decimal('10.000'),
+        )
+        self.mayorista = PriceList.objects.create(name='Mayorista')
+        ProductPrice.objects.create(product=self.product, price_list=self.mayorista, price=Decimal('4000.00'))
+
+    def _post(self, payments=None, status='COMPLETED', weight='1.000', **extra):
+        data = {
+            'cart_data': json.dumps([{'id': self.product.id, 'qty': 1, 'weight': weight}]),
+            'customer_id': str(self.customer.id),
+            'payment_method': str(self.cash.id),
+            'price_list': 'default',
+            'sale_status': status,
+        }
+        if payments is not None:
+            data['payments_data'] = json.dumps(payments)
+        data.update(extra)
+        return self.client.post(reverse('sales:pos'), data, headers={'X-POS-Ajax': '1'})
+
+    def test_mixed_payment_creates_one_sale_payment_per_method(self):
+        response = self._post([
+            {'method_id': self.cash.id, 'amount': '3000'},
+            {'method_id': self.transfer.id, 'amount': '2000', 'reference': 'OP-123'},
+        ])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        sale = Sale.objects.get()
+        self.assertEqual(sale.total_amount, Decimal('5000.00'))
+        self.assertEqual(
+            sorted((p.payment_method.name, p.amount, p.reference) for p in sale.payments.all()),
+            [('Efectivo', Decimal('3000.00'), ''), ('Transferencia', Decimal('2000.00'), 'OP-123')],
+        )
+        self.assertTrue(all(p.cash_session == self.session for p in sale.payments.all()))
+        self.assertEqual(sale.payment_method, self.cash)
+
+    def test_payments_must_match_total_exactly(self):
+        response = self._post([
+            {'method_id': self.cash.id, 'amount': '3000'},
+            {'method_id': self.transfer.id, 'amount': '1999.99'},
+        ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('debe ser igual al total', response.json()['error'])
+        self.assertFalse(Sale.objects.exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, Decimal('10.000'))
+
+    def test_single_payment_method_creates_single_sale_payment(self):
+        self._post()
+
+        payment = Sale.objects.get().payments.get()
+        self.assertEqual(payment.payment_method, self.cash)
+        self.assertEqual(payment.amount, Decimal('5000.00'))
+
+    def test_current_account_portion_debits_only_that_amount(self):
+        self._post([
+            {'method_id': self.cash.id, 'amount': '1000'},
+            {'method_id': self.current_account.id, 'amount': '4000'},
+        ])
+
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.balance, Decimal('4000.00'))
+        ledger = CurrentAccount.objects.get(customer=self.customer)
+        self.assertEqual((ledger.entry_type, ledger.amount), ('DEBT', Decimal('4000.00')))
+
+    def test_cancelling_mixed_sale_reverts_current_account_portion(self):
+        from sales.services import cancel_sale
+        self._post([
+            {'method_id': self.cash.id, 'amount': '1000'},
+            {'method_id': self.current_account.id, 'amount': '4000'},
+        ])
+        sale = Sale.objects.get()
+
+        cancel_sale(sale=sale, user=self.user, reason='Error de carga')
+
+        self.customer.refresh_from_db()
+        sale.refresh_from_db()
+        self.assertEqual(self.customer.balance, Decimal('0.00'))
+        self.assertEqual(sale.status, Sale.STATUS_CANCELLED)
+        self.assertTrue(sale.is_cancelled)
+
+    def test_sale_detail_freezes_unit_cost(self):
+        self._post()
+        self.product.cost_price = Decimal('9999.00')
+        self.product.save()
+
+        detail = SaleDetail.objects.get()
+        self.assertEqual(detail.unit_cost, Decimal('3000.00'))
+
+    def test_reservation_with_deposit_then_completion(self):
+        response = self._post([{'method_id': self.cash.id, 'amount': '1500'}], status='RESERVED', weight='2.000')
+
+        self.assertEqual(response.status_code, 200, response.content)
+        sale = Sale.objects.get()
+        self.assertEqual(sale.status, Sale.STATUS_RESERVED)
+        self.assertEqual(sale.amount_paid, Decimal('1500.00'))
+        self.assertEqual(sale.balance_due, Decimal('8500.00'))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, Decimal('8.000'))  # el stock queda comprometido
+
+        # Pago incompleto: rechazado
+        self.client.post(reverse('sales:reservation_complete', args=[sale.id]), {
+            'payment_method': self.transfer.id, 'amount': '100',
+        })
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, Sale.STATUS_RESERVED)
+
+        # El saldo se cobra en el turno abierto actual
+        self.session.is_open = False
+        self.session.save()
+        new_session = CashSession.objects.create(user=self.user, initial_amount=Decimal('0'))
+        self.client.post(reverse('sales:reservation_complete', args=[sale.id]), {
+            'payment_method': self.transfer.id, 'amount': '8500.00', 'reference': 'TR-9',
+        })
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, Sale.STATUS_COMPLETED)
+        self.assertEqual(sale.balance_due, Decimal('0.00'))
+        self.assertEqual(sale.payments.get(payment_method=self.transfer).cash_session, new_session)
+
+    def test_reservation_without_deposit_is_allowed(self):
+        response = self._post([], status='RESERVED', payment_method='')
+
+        self.assertEqual(response.status_code, 200, response.content)
+        sale = Sale.objects.get()
+        self.assertEqual(sale.status, Sale.STATUS_RESERVED)
+        self.assertFalse(sale.payments.exists())
+
+    def test_reservation_deposit_cannot_exceed_total(self):
+        response = self._post([{'method_id': self.cash.id, 'amount': '6000'}], status='RESERVED')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Sale.objects.exists())
+
+    def test_sync_accepts_payments_array_and_single_method(self):
+        base = {
+            'cart': [{'id': self.product.id, 'qty': 1, 'weight': '1.000'}],
+            'customer_id': self.customer.id,
+            'price_list': 'default',
+        }
+        response = self.client.post(reverse('sales_sync'), json.dumps({'sales': [
+            {**base, 'client_uuid': '8f1a3b8e-1111-4c4c-9a9a-000000000001',
+             'payments': [{'method_id': self.cash.id, 'amount': 3000}, {'method_id': self.transfer.id, 'amount': 2000}]},
+            {**base, 'client_uuid': '8f1a3b8e-1111-4c4c-9a9a-000000000002', 'payment_method_id': self.transfer.id},
+        ]}), content_type='application/json')
+
+        statuses = [r['status'] for r in response.json()['results']]
+        self.assertEqual(statuses, ['created', 'created'])
+        mixed = Sale.objects.get(client_uuid='8f1a3b8e-1111-4c4c-9a9a-000000000001')
+        single = Sale.objects.get(client_uuid='8f1a3b8e-1111-4c4c-9a9a-000000000002')
+        self.assertEqual(mixed.payments.count(), 2)
+        self.assertEqual(single.payments.get().amount, Decimal('5000.00'))
+
+    def test_customer_price_list_applies_when_none_selected(self):
+        self.customer.price_list = self.mayorista
+        self.customer.save()
+
+        self._post(price_list='')
+
+        self.assertEqual(Sale.objects.get().total_amount, Decimal('4000.00'))
+
+    def test_escpos_ticket_renders_with_autoprint(self):
+        self._post([
+            {'method_id': self.cash.id, 'amount': '3000'},
+            {'method_id': self.transfer.id, 'amount': '2000'},
+        ])
+        sale = Sale.objects.get()
+
+        response = self.client.get(reverse('sales:ticket_escpos', args=[sale.id]), {'w': '58'})
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('58mm', content)
+        self.assertIn('window.print()', content)
+        self.assertIn('Transferencia', content)
+        self.assertIn('@media print', content)
+
+
+class SaleReturnTests(TestCase):
+    """La devolución reincorpora el stock una sola vez y revierte la parte fiada."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='encargado_dev', password='pass12345', is_staff=True)
+        self.user.user_permissions.add(Permission.objects.get(codename='add_sale', content_type__app_label='sales'))
+        self.client.force_login(self.user)
+        self.current_account = PaymentMethod.objects.create(name='Cuenta Corriente')
+        CashSession.objects.create(user=self.user, initial_amount=Decimal('0'))
+        self.customer = Customer.objects.create(full_name='Fiado', dni_cuit='20333444')
+        self.product = Product.objects.create(sku='HUEVO', name='Maple', price=Decimal('100.00'), stock=Decimal('10'))
+
+    def test_return_restores_stock_once_and_credits_current_account(self):
+        self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps([{'id': self.product.id, 'qty': 3}]),
+            'customer_id': str(self.customer.id),
+            'payment_method': str(self.current_account.id),
+            'price_list': 'default',
+        })
+        sale = Sale.objects.get()
+        detail = sale.details.get()
+
+        self.client.post(reverse('sales:sale_return', args=[sale.id]), {f'qty_{detail.id}': '2', 'reason': 'Rotos'})
+
+        self.product.refresh_from_db()
+        self.customer.refresh_from_db()
+        self.assertEqual(self.product.stock, Decimal('9'))  # 10 - 3 + 2
+        self.assertEqual(self.customer.balance, Decimal('100.00'))  # 300 fiado - 200 devuelto
+        self.assertEqual(InventoryMovement.objects.filter(product=self.product, movement_type__in=['IN', 'SALE_CANCEL_IN']).count(), 1)

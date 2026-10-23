@@ -68,6 +68,10 @@
                                             <li>
                                                 <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
                                                     {% csrf_token %}<input type="hidden" name="status" value="RECEIVED">
+                                                    <div class="px-3 pt-2">
+                                                        <label class="form-label small mb-1">Vencimiento factura (por defecto 30 días)</label>
+                                                        <input type="date" name="due_date" class="form-control form-control-sm">
+                                                    </div>
                                                     <button type="submit" class="dropdown-item py-2"><i class="bi bi-box-seam me-2 text-success"></i>Marcar como Recibido</button>
                                                 </form>
                                             </li>
@@ -75,12 +79,18 @@
                                             {% if order.status == 'RECEIVED' %}
                                             <li>
                                                 <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
-                                                    {% csrf_token %}<input type="hidden" name="status" value="PAID">
+                                                    {% csrf_token %}<input type="hidden" name="status" value="PAID"><input type="hidden" name="source" value="CASH">
                                                     <button type="submit" class="dropdown-item py-2"><i class="bi bi-cash-coin me-2 text-primary"></i>Marcar como Pagado (Caja)</button>
                                                 </form>
                                             </li>
+                                            <li>
+                                                <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">
+                                                    {% csrf_token %}<input type="hidden" name="status" value="PAID"><input type="hidden" name="source" value="BANK">
+                                                    <button type="submit" class="dropdown-item py-2"><i class="bi bi-bank me-2 text-primary"></i>Marcar como Pagado (Banco)</button>
+                                                </form>
+                                            </li>
                                             {% endif %}
-                                            {% if order.status != 'PAID' and order.status != 'CANCELLED' %}
+                                            {% if order.status == 'PENDING' or order.status == 'ORDERED' %}
                                             <li><hr class="dropdown-divider"></li>
                                             <li>
                                                 <form action="{% url 'products:update_purchase_order_status' pk=order.pk %}" method="post">

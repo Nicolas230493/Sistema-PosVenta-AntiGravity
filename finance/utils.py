@@ -4,7 +4,8 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from django.utils import timezone
 
-def generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses, stock_summary=None):
+def generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses, stock_summary=None,
+                             forced_adjustments=None, forced_adjustments_total=None):
     """Genera un reporte de cierre de caja (Arqueo de Caja / X-Read)"""
     p = canvas.Canvas(response, pagesize=A4)
     width, height = A4
@@ -48,13 +49,20 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
     p.drawRightString(width - margin, y, f"${session.expected_final_amount}")
     y -= 0.8 * cm
     
-    if not session.is_open and session.real_final_amount is not None:
-        p.drawString(margin, y, "TOTAL REAL (ARQUEO):")
-        p.drawRightString(width - margin, y, f"${session.real_final_amount}")
+    declared_cash = session.declared_cash if session.declared_cash is not None else session.real_final_amount
+    if not session.is_open and declared_cash is not None:
+        p.drawString(margin, y, "EFECTIVO DECLARADO (ARQUEO CIEGO):")
+        p.drawRightString(width - margin, y, f"${declared_cash}")
         y -= 0.6 * cm
-        
-        diff = session.real_final_amount - session.expected_final_amount
-        p.setFont("Helvetica-Bold", 11)
+        if session.declared_digital is not None:
+            p.setFont("Helvetica", 11)
+            p.drawString(margin, y, "Digital declarado / esperado:")
+            p.drawRightString(width - margin, y, f"${session.declared_digital} / ${session.expected_digital or 0}")
+            y -= 0.6 * cm
+
+        expected_cash = session.expected_cash if session.expected_cash is not None else session.expected_final_amount
+        diff = session.difference if session.difference is not None else declared_cash - expected_cash
+        p.setFont("Helvetica-Bold", 13)
         if diff == 0:
             p.setFillColor(colors.green)
             p.drawString(margin, y, "DIFERENCIA: SIN DIFERENCIAS")
@@ -132,6 +140,41 @@ def generate_cash_report_pdf(response, session, sales_summary, payments_summary,
                 p.showPage()
                 y = height - margin
                 p.setFont("Helvetica", 9)
+
+    # 5. Panel de Ajustes Forzosos (SPEC-FIN-06 §6.2): AUTO_ADJUST_IN del turno
+    if y < 5 * cm:
+        p.showPage()
+        y = height - margin
+    y -= 0.5 * cm
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(margin, y, "AJUSTES FORZOSOS (VENTAS EN DESCUBIERTO)")
+    p.line(margin, y - 0.2*cm, width - margin, y - 0.2*cm)
+    y -= 0.8 * cm
+    if not forced_adjustments:
+        p.setFont("Helvetica", 9)
+        p.drawString(margin, y, "Sin ajustes automáticos en este turno.")
+        y -= 0.5 * cm
+    else:
+        p.setFont("Helvetica-Bold", 9)
+        p.drawString(margin, y, "Producto")
+        p.drawString(margin + 8*cm, y, "Venta")
+        p.drawRightString(width - margin - 4*cm, y, "Ajustado")
+        p.drawRightString(width - margin, y, "Equivalente $")
+        y -= 0.4 * cm
+        p.setFont("Helvetica", 9)
+        for row in forced_adjustments:
+            p.drawString(margin, y, row['product'][:45])
+            p.drawString(margin + 8*cm, y, f"#{row['sale_id']}")
+            p.drawRightString(width - margin - 4*cm, y, f"{row['quantity']:.3f} {row['unit']}")
+            p.drawRightString(width - margin, y, f"${row['amount']}")
+            y -= 0.4 * cm
+            if y < 3*cm:
+                p.showPage()
+                y = height - margin
+                p.setFont("Helvetica", 9)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(margin, y, "TOTAL AJUSTES FORZOSOS:")
+        p.drawRightString(width - margin, y, f"${forced_adjustments_total}")
 
     p.showPage()
     p.save()

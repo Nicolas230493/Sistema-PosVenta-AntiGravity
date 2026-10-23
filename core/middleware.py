@@ -26,6 +26,7 @@ class RoleAccessMiddleware:
             restricted_for_supervisors = [
                 'products:business_intelligence', # Solo Admin ve utilidades brutas
                 'products:admin_tools', # Solo Admin descarga backups/actualización masiva
+                'finance:profit_report', # Ganancia Neta Real (SPEC-FIN-06 §6.2)
             ]
 
             try:

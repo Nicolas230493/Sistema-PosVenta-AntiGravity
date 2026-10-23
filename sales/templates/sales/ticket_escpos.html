@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ticket #{{ sale.id }}</title>
+    <style>
+        /* SPEC-POS-08 §8.3: ancho fijo para impresoras térmicas ESC/POS (58mm / 80mm) */
+        @page { size: {{ width }}mm auto; margin: 0; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+        body {
+            width: {{ width }}mm;
+            padding: 2mm {% if width == '58' %}2mm{% else %}4mm{% endif %};
+            font-family: "Courier New", Courier, monospace;
+            font-size: {% if width == '58' %}10px{% else %}12px{% endif %};
+            line-height: 1.25;
+        }
+        .center { text-align: center; }
+        .right { text-align: right; }
+        .bold { font-weight: bold; }
+        .big { font-size: 1.35em; }
+        .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+        table { width: 100%; border-collapse: collapse; }
+        td { vertical-align: top; padding: 0; }
+        .item-name { word-break: break-word; }
+        .toolbar { margin: 4mm 0; display: flex; gap: 2mm; }
+        .toolbar button { flex: 1; padding: 2mm; font: inherit; cursor: pointer; }
+        @media print {
+            .toolbar { display: none !important; }
+            body { width: {{ width }}mm; }
+        }
+    </style>
+</head>
+<body>
+    <div class="center">
+        <div class="bold big">{{ config.nombre_empresa|upper }}</div>
+        <div>{% if sale.status == 'RESERVED' %}COMPROBANTE DE SEÑA{% else %}TICKET NO FISCAL{% endif %}</div>
+    </div>
+    <div class="sep"></div>
+    <div>{% if sale.status == 'RESERVED' %}Pedido{% else %}Venta{% endif %} #{{ sale.id }}</div>
+    <div>{{ sale.fecha_hora|date:"d/m/Y H:i" }}</div>
+    <div>Cajero: {{ sale.user.username|default:"-" }}</div>
+    {% if sale.customer and sale.customer.dni_cuit != '00000000' %}<div>Cliente: {{ sale.customer.full_name }}</div>{% endif %}
+    {% if sale.is_cancelled %}<div class="bold center">*** ANULADA ***</div>{% endif %}
+    <div class="sep"></div>
+
+    <table>
+        {% for d in details %}
+        <tr><td colspan="2" class="item-name">{{ d.product.name|default:"Prod. eliminado" }}</td></tr>
+        <tr>
+            <td>{{ d.quantity|floatformat:"-3" }}{% if d.product.unit == 'kg' %} kg{% endif %} x ${{ d.price }}</td>
+            <td class="right">${{ d.subtotal }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <div class="sep"></div>
+
+    <table>
+        {% if sale.promo_discount > 0 %}<tr><td>Promociones</td><td class="right">-${{ sale.promo_discount }}</td></tr>{% endif %}
+        {% if sale.discount_amount > 0 %}<tr><td>Descuento</td><td class="right">-${{ sale.discount_amount }}</td></tr>{% endif %}
+        {% if sale.points_discount > 0 %}<tr><td>Canje puntos</td><td class="right">-${{ sale.points_discount }}</td></tr>{% endif %}
+        {% if sale.surcharge_amount > 0 %}<tr><td>Recargo</td><td class="right">${{ sale.surcharge_amount }}</td></tr>{% endif %}
+        <tr class="bold big"><td>TOTAL</td><td class="right">${{ sale.total_amount }}</td></tr>
+    </table>
+    <div class="sep"></div>
+
+    <table>
+        {% for p in payments %}
+        <tr>
+            <td>{{ p.payment_method.name }}{% if p.reference %} ({{ p.reference }}){% endif %}</td>
+            <td class="right">${{ p.amount }}</td>
+        </tr>
+        {% empty %}
+        {% if sale.payment_method %}<tr><td>{{ sale.payment_method.name }}</td><td class="right">${{ sale.total_amount }}</td></tr>{% endif %}
+        {% endfor %}
+        {% if sale.status == 'RESERVED' %}
+        <tr class="bold"><td>SALDO PENDIENTE</td><td class="right">${{ sale.balance_due }}</td></tr>
+        {% endif %}
+    </table>
+    <div class="sep"></div>
+    <div class="center">¡Gracias por su compra!</div>
+
+    <div class="toolbar">
+        <button type="button" onclick="window.print()">Imprimir</button>
+        <button type="button" onclick="window.close()">Cerrar</button>
+    </div>
+
+    {% if autoprint %}
+    <script>
+        window.addEventListener('load', function () {
+            window.print();
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

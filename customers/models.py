@@ -11,6 +11,8 @@ class Customer(models.Model):
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Saldo Deudor")
     points = models.IntegerField(default=0, validators=[MinValueValidator(0)], verbose_name="Puntos Acumulados")
     limite_credito = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Límite de Crédito")
+    # SPEC-CRM-10 §10.1: segmento comercial (Minorista, Mayorista/Gastronómico, VIP...)
+    price_list = models.ForeignKey('products.PriceList', on_delete=models.SET_NULL, null=True, blank=True, related_name='customers', verbose_name="Lista de Precios")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Registro")
 
     def __str__(self):

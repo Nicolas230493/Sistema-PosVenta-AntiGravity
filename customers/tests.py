@@ -45,3 +45,45 @@ class CustomerPaymentTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertTrue(bytes(response.content).startswith(b'%PDF'))
+
+
+class CustomerStatementTests(TestCase):
+    """SPEC-CRM-10 §10.2: estado de cuenta (PDF + WhatsApp) desde CurrentAccount."""
+
+    def setUp(self):
+        from products.models import PriceList
+        self.user = User.objects.create_user(username='cobrador', password='pass12345')
+        self.client.force_login(self.user)
+        self.customer = Customer.objects.create(full_name='Doña Rosa', dni_cuit='27111222', phone='+54 9 11 5555-1234',
+                                                balance=Decimal('700.00'))
+        CurrentAccount.objects.create(customer=self.customer, amount=Decimal('1000.00'), entry_type='DEBT',
+                                      reference='Venta #10', balance_after=Decimal('1000.00'))
+        CurrentAccount.objects.create(customer=self.customer, amount=Decimal('300.00'), entry_type='CREDIT',
+                                      reference='Pago #3', balance_after=Decimal('700.00'))
+        self.mayorista = PriceList.objects.create(name='Mayorista')
+
+    def test_whatsapp_statement_has_chronological_detail_and_balance(self):
+        from urllib.parse import unquote
+        response = self.client.get(reverse('customers:whatsapp_statement', args=[self.customer.id]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response['Location'].startswith('https://wa.me/5491155551234?text='))
+        text = unquote(response['Location'])
+        self.assertLess(text.index('Venta #10'), text.index('Pago #3'))
+        self.assertIn('Compra fiada Venta #10: +$1000.00', text)
+        self.assertIn('Entrega/Pago Pago #3: -$300.00', text)
+        self.assertIn('SALDO DEUDOR ACTUAL: $700.00', text)
+
+    def test_statement_pdf_uses_ledger(self):
+        response = self.client.get(reverse('customers:export_statement_pdf', args=[self.customer.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(bytes(response.content).startswith(b'%PDF'))
+
+    def test_customer_form_saves_price_list_segment(self):
+        self.client.post(reverse('customers:customer_update', args=[self.customer.id]), {
+            'full_name': 'Doña Rosa', 'dni_cuit': '27111222', 'price_list': self.mayorista.id,
+        })
+
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.price_list, self.mayorista)

@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Pedidos / Señas{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm rounded-4">
+    <div class="card-header bg-transparent border-0 pt-4 px-4">
+        <h5 class="fw-bold mb-1">Pedidos pendientes de entrega</h5>
+        <p class="small opacity-75 mb-0">Apartados con seña: el stock ya fue descontado. Al entregar, se cobra el saldo en la caja abierta.</p>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="bg-light">
+                <tr>
+                    <th class="ps-4">Pedido</th>
+                    <th>Cliente</th>
+                    <th>Detalle</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end">Seña</th>
+                    <th class="text-end">Saldo</th>
+                    <th class="text-end pe-4">Cobrar saldo y entregar</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sale in reservations %}
+                <tr>
+                    <td class="ps-4">
+                        <div class="fw-bold">#{{ sale.id }}</div>
+                        <div class="small opacity-75">{{ sale.fecha_hora|date:"d/m H:i" }}</div>
+                    </td>
+                    <td>{{ sale.customer.full_name|default:"-" }}</td>
+                    <td class="small">
+                        {% for d in sale.details.all %}{{ d.product.name|default:"Prod. eliminado" }} ({{ d.quantity|floatformat:"-3" }}){% if not forloop.last %}, {% endif %}{% endfor %}
+                    </td>
+                    <td class="text-end">${{ sale.total_amount }}</td>
+                    <td class="text-end text-success">
+                        ${{ sale.amount_paid }}
+                        {% for p in sale.payments.all %}<div class="small opacity-75">{{ p.payment_method.name }}</div>{% endfor %}
+                    </td>
+                    <td class="text-end fw-bold text-danger">${{ sale.balance_due }}</td>
+                    <td class="text-end pe-4">
+                        <form method="post" action="{% url 'sales:reservation_complete' pk=sale.pk %}" class="d-flex gap-1 justify-content-end">
+                            {% csrf_token %}
+                            <input type="hidden" name="amount" value="{{ sale.balance_due|stringformat:'s' }}">
+                            <select name="payment_method" class="form-select form-select-sm w-auto" required>
+                                {% for pm in payment_methods %}<option value="{{ pm.id }}">{{ pm.name }}</option>{% endfor %}
+                            </select>
+                            <input type="text" name="reference" class="form-control form-control-sm w-auto" placeholder="N° comprobante">
+                            <button type="submit" class="btn btn-sm btn-success rounded-pill text-nowrap"><i class="bi bi-check2 me-1"></i>Entregar</button>
+                        </form>
+                        <div class="mt-1">
+                            <a href="{% url 'sales:ticket_escpos' pk=sale.pk %}" target="_blank" class="small me-2">Comprobante</a>
+                            <a href="{% url 'sales:sale_cancel' pk=sale.pk %}" class="small text-danger">Anular</a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center py-5 opacity-50">No hay pedidos pendientes.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

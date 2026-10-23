@@ -57,6 +57,14 @@
                     <i class="bi bi-receipt me-2"></i> Historial Ventas
                 </a>
 
+                <a class="nav-link text-white {% if request.resolver_match.url_name == 'reservation_list' %}active{% endif %}" href="{% url 'sales:reservation_list' %}">
+                    <i class="bi bi-bookmark-check me-2"></i> Pedidos / Señas
+                </a>
+
+                <a class="nav-link text-white {% if request.resolver_match.url_name == 'close_cash' %}active{% endif %}" href="{% url 'finance:close_cash' %}">
+                    <i class="bi bi-lock me-2"></i> Cerrar Caja
+                </a>
+
                 <div class="sidebar-section-title px-4 py-2 small opacity-50">Gestión Comercial</div>
 
                 {% if perms.customers.view_customer %}
@@ -91,6 +99,7 @@
                 <div class="px-4 py-2 small opacity-50">CONTROL Y REPORTES</div>
                 <a class="nav-link text-white" href="{% url 'products:bi_dashboard' %}"><i class="bi bi-graph-up me-2"></i> Informes / BI</a>
                 <a class="nav-link text-white" href="{% url 'finance:fiscal_reports' %}"><i class="bi bi-file-earmark-bar-graph me-2"></i> Reportes Fiscales</a>
+                <a class="nav-link text-white" href="{% url 'finance:profit_report' %}"><i class="bi bi-calculator me-2"></i> Ganancia Neta</a>
                 <a class="nav-link text-white" href="{% url 'products:admin_tools' %}"><i class="bi bi-shield-lock me-2"></i> Herramientas</a>
                 {% endif %}
             </nav>

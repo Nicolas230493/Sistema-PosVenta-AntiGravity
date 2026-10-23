@@ -40,6 +40,8 @@ class ConfiguracionSistema(models.Model):
     color_primario = models.CharField(max_length=7, default="#4318ff")
     modo_oscuro = models.BooleanField(default=False)
     logo = models.ImageField(upload_to='logos/', blank=True, null=True)
+    # SPEC-INV-09 §9.1: ventana de alerta de vencimientos en el Dashboard
+    dias_alerta_vencimiento = models.PositiveIntegerField(default=7, verbose_name="Días de alerta de vencimiento")
 
     class Meta:
         verbose_name = "Configuración del Sistema"

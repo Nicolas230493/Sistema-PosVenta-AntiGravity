@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block page_title %}Ajuste Manual de Inventario{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-warning bg-opacity-25 py-3">
+                <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-sliders me-2"></i>Ajuste Manual Auditable de Stock</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="alert alert-info border-0 small mb-4">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    <strong>Control de Auditoría:</strong> Todo ajuste manual queda registrado cronológicamente en el Kardex del producto con fecha, usuario y el motivo especificado (merma, desposte, vencimiento, conteo físico, etc.).
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Producto a Ajustar</label>
+                        {{ form.product }}
+                        {% if form.product.errors %}
+                            <div class="text-danger small">{{ form.product.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Tipo de Ajuste</label>
+                            {{ form.adjustment_type }}
+                            {% if form.adjustment_type.errors %}
+                                <div class="text-danger small">{{ form.adjustment_type.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Cantidad / Nuevo Stock</label>
+                            {{ form.quantity }}
+                            {% if form.quantity.errors %}
+                                <div class="text-danger small">{{ form.quantity.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Motivo del Ajuste <span class="text-danger">*</span></label>
+                        {{ form.reason }}
+                        <div class="form-text small">Indique la justificación: Merma por desposte, mercadería vencida, rotura en traslado, conteo físico mensual, etc.</div>
+                        {% if form.reason.errors %}
+                            <div class="text-danger small">{{ form.reason.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'products:product_list' %}" class="btn btn-outline-secondary rounded-pill px-4">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-warning rounded-pill px-4 shadow">
+                            <i class="bi bi-check2-circle me-1"></i>Aplicar Ajuste
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

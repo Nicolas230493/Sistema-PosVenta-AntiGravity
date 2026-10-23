@@ -9,9 +9,10 @@ class PaymentMethodAdmin(admin.ModelAdmin):
 
 @admin.register(CashSession)
 class CashSessionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'start_date', 'end_date', 'initial_amount', 'expected_final_amount', 'real_final_amount', 'is_open')
+    list_display = ('id', 'user', 'start_date', 'end_date', 'initial_amount', 'expected_cash', 'declared_cash', 'difference', 'is_open')
     list_filter = ('is_open', 'start_date')
 
 @admin.register(CashExpense)
 class CashExpenseAdmin(admin.ModelAdmin):
-    list_display = ('description', 'amount', 'session', 'date')
+    list_display = ('description', 'amount', 'kind', 'session', 'date')
+    list_filter = ('kind',)

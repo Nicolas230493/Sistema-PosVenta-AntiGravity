@@ -9,6 +9,9 @@
             <h5 class="mb-0 fw-bold opacity-75">Listado de Proveedores</h5>
         </div>
         <div class="col-md-6 text-end">
+            <a href="{% url 'suppliers:supplier_remito_entry' %}" class="btn btn-outline-primary rounded-pill px-3 shadow-sm me-2">
+                <i class="bi bi-box-arrow-in-down me-1"></i>Cargar Remito / Mercadería
+            </a>
             <a href="{% url 'suppliers:supplier_create' %}" class="btn btn-primary rounded-pill px-4 shadow-sm">
                 <i class="bi bi-truck me-2"></i>Nuevo Proveedor
             </a>
@@ -24,6 +27,7 @@
                 <th>Teléfono</th>
                 <th>Email</th>
                 <th>Dirección</th>
+                <th class="text-end">Saldo adeudado</th>
                 <th class="text-end pe-4">Acciones</th>
             </tr>
         </thead>
@@ -36,8 +40,15 @@
                 <td>{{ supplier.phone|default:"---" }}</td>
                 <td>{{ supplier.email|default:"---" }}</td>
                 <td>{{ supplier.address|default:"---"|truncatechars:30 }}</td>
+                <td class="text-end fw-bold {% if supplier.balance > 0 %}text-danger{% endif %}">${{ supplier.balance }}</td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
+                        <a href="{% url 'suppliers:supplier_account' pk=supplier.pk %}" class="btn btn-outline-primary btn-sm border" title="Cuenta Corriente">
+                            <i class="bi bi-journal-text"></i>
+                        </a>
+                        <a href="{% url 'suppliers:supplier_remito_entry_pk' pk=supplier.pk %}" class="btn btn-outline-success btn-sm border" title="Cargar Remito">
+                            <i class="bi bi-box-arrow-in-down"></i>
+                        </a>
                         <a href="{% url 'suppliers:supplier_update' pk=supplier.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>
@@ -49,7 +60,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5" class="text-center py-5">
+                <td colspan="6" class="text-center py-5">
                     <i class="bi bi-truck fs-1 text-body-secondary mb-3 d-block"></i>
                     <p class="text-body-secondary">No hay proveedores registrados todavía.</p>
                 </td>

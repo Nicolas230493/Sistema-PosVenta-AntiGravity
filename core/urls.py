@@ -9,4 +9,5 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('configuracion/', views.configuracion_view, name='configuracion'),
+    path('vencimientos/<int:pk>/descuento/', views.apply_expiry_discount, name='apply_expiry_discount'),
 ]

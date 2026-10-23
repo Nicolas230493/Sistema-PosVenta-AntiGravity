@@ -20,12 +20,13 @@ class InventoryMovementAdmin(admin.ModelAdmin):
 
 @admin.register(StockLoss)
 class StockLossAdmin(admin.ModelAdmin):
-    list_display = ('product', 'quantity', 'reason', 'date', 'user')
+    list_display = ('product', 'quantity', 'unit_cost', 'reason', 'date', 'user')
     list_filter = ('reason', 'date')
 
 @admin.register(PriceLog)
 class PriceLogAdmin(admin.ModelAdmin):
-    list_display = ('product', 'old_price', 'new_price', 'date', 'user')
+    list_display = ('product', 'price_type', 'old_price', 'new_price', 'date', 'user')
+    list_filter = ('price_type',)
 
 @admin.register(PriceList)
 class PriceListAdmin(admin.ModelAdmin):

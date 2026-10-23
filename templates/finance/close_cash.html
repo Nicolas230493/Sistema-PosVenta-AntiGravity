@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Cierre de Caja{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <form method="post" class="card border-0 shadow-sm rounded-4">
+            {% csrf_token %}
+            {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+            <div class="card-body p-4">
+                <h4 class="fw-bold mb-1">Cierre de Turno — Caja #{{ session.id }}</h4>
+                <p class="small opacity-75 mb-4">Abierta por {{ session.user.username|default:"N/A" }} el {{ session.start_date|date:"d/m/Y H:i" }}</p>
+
+                {% if blind %}
+                <div class="alert alert-info border-0 small">
+                    <i class="bi bi-eye-slash me-1"></i>
+                    <strong>Arqueo ciego:</strong> contá el efectivo y los comprobantes que tenés físicamente. El sistema no muestra el monto esperado; la diferencia se informa al cerrar.
+                </div>
+                {% else %}
+                <div class="bg-light rounded-3 p-3 mb-4 small">
+                    <div class="d-flex justify-content-between"><span>Monto inicial</span><span class="fw-bold">${{ session.initial_amount }}</span></div>
+                    <div class="d-flex justify-content-between"><span>Ingresos en efectivo (+)</span><span class="fw-bold">${{ expected.cash_in }}</span></div>
+                    <div class="d-flex justify-content-between"><span>Egresos (-)</span><span class="fw-bold">${{ expected.expenses }}</span></div>
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between fs-6"><span>Efectivo esperado</span><span class="fw-bold text-primary">${{ expected.expected_cash }}</span></div>
+                    <div class="d-flex justify-content-between fs-6"><span>Digital esperado</span><span class="fw-bold text-primary">${{ expected.expected_digital }}</span></div>
+                </div>
+                {% endif %}
+
+                <label class="form-label fw-bold small text-uppercase opacity-75">Efectivo contado en caja</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light fs-5">$</span>
+                    <input type="number" name="declared_cash" class="form-control form-control-lg border-0 bg-light fw-bold" required min="0" step="0.01" autofocus>
+                </div>
+
+                <label class="form-label fw-bold small text-uppercase opacity-75">Total en comprobantes (Transferencia / QR / Tarjetas)</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light">$</span>
+                    <input type="number" name="declared_digital" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01" value="0">
+                </div>
+
+                <label class="form-label fw-bold small">Observaciones del turno</label>
+                <textarea name="notes" class="form-control border-0 bg-light mb-4" rows="2" placeholder="Opcional: novedades, diferencias, etc."></textarea>
+
+                <button type="submit" class="btn btn-danger w-100 rounded-pill py-3 fw-bold"
+                        onclick="return confirm('El cierre es irreversible. ¿Confirmás los montos contados?');">
+                    <i class="bi bi-lock me-2"></i>CERRAR CAJA (IRREVERSIBLE)
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -86,12 +86,17 @@
     function saleFromForm(formData, clientUuid) {
         let cart = [];
         try { cart = JSON.parse(formData.get('cart_data') || '[]'); } catch (e) { cart = []; }
+        // SPEC-POS-08: pagos mixtos como array; con un único medio se envía solo payment_method_id
+        let payments;
+        try { payments = JSON.parse(formData.get('payments_data') || 'null') || undefined; } catch (e) { payments = undefined; }
         return {
             client_uuid: clientUuid,
             created_at: new Date().toISOString(),
             cart: cart,
             customer_id: formData.get('customer_id'),
-            payment_method: formData.get('payment_method'),
+            payment_method_id: formData.get('payment_method'),
+            payments: payments,
+            status: formData.get('sale_status') || 'COMPLETED',
             price_list: formData.get('price_list'),
             discount_amount: formData.get('discount_amount') || '0',
             surcharge_amount: formData.get('surcharge_amount') || '0',

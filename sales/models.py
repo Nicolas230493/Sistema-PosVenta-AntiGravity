@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.contrib.auth.models import User
 from products.models import Product
@@ -7,6 +9,15 @@ from core.models import TurnoCaja
 from finance.models import CashSession
 
 class Sale(models.Model):
+    STATUS_COMPLETED = 'COMPLETED'
+    STATUS_RESERVED = 'RESERVED'
+    STATUS_CANCELLED = 'CANCELLED'
+    STATUS_CHOICES = [
+        (STATUS_COMPLETED, 'Completada'),
+        (STATUS_RESERVED, 'Apartado / Pedido con Seña'),
+        (STATUS_CANCELLED, 'Anulada'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Vendedor")
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales', verbose_name="Cliente", null=True, blank=True)
     turno = models.ForeignKey(TurnoCaja, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Turno de Caja")
@@ -20,12 +31,37 @@ class Sale(models.Model):
     points_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Descuento por Puntos")
     promo_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Descuento por Promos")
     surcharge_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Recargo")
+    # Método principal (el de mayor monto). El detalle de cobro está en SalePayment.
     payment_method = models.ForeignKey(PaymentMethod, on_delete=models.PROTECT, null=True, verbose_name="Método de Pago")
     payment_method_old = models.CharField(max_length=10, null=True, blank=True) # Temporal para migración
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_COMPLETED, db_index=True, verbose_name="Estado")
+    is_cancelled = models.BooleanField(default=False, verbose_name="Anulada")
+    cancel_reason = models.TextField(blank=True, null=True, verbose_name="Motivo de Anulación")
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Anulación")
+    cancelled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cancelled_sales', verbose_name="Anulada por")
 
     @property
     def net_amount(self):
         return self.total_amount - self.tax_amount
+
+    @property
+    def amount_paid(self):
+        return self.payments.aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+
+    @property
+    def balance_due(self):
+        return self.total_amount - self.amount_paid
+
+    @property
+    def is_mixed_payment(self):
+        return self.payments.count() > 1
+
+    def save(self, *args, **kwargs):
+        if self.status == self.STATUS_CANCELLED:
+            self.is_cancelled = True
+        elif self.is_cancelled:
+            self.status = self.STATUS_CANCELLED
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Venta #{self.id}"
@@ -41,7 +77,8 @@ class SaleDetail(models.Model):
     quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Cantidad")
     peso_kg = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Peso (kg)")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
-    cost_price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Costo (Histórico)")
+    # SPEC-FIN-06 §6.2: costo congelado al momento de la venta (rentabilidad histórica)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Costo Unitario (Histórico)")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto IVA")
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Subtotal")
@@ -49,6 +86,26 @@ class SaleDetail(models.Model):
     def save(self, *args, **kwargs):
         self.subtotal = self.quantity * self.price
         super().save(*args, **kwargs)
+
+class SalePayment(models.Model):
+    """SPEC-POS-08 §8.1: una venta puede cobrarse con varios medios de pago."""
+    sale = models.ForeignKey(Sale, related_name='payments', on_delete=models.CASCADE, verbose_name="Venta")
+    payment_method = models.ForeignKey(PaymentMethod, on_delete=models.PROTECT, verbose_name="Método de Pago")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Monto")
+    reference = models.CharField(max_length=100, blank=True, default='', verbose_name="N° de Comprobante")
+    # Turno en el que ingresó el dinero (la seña y el saldo de un apartado pueden cobrarse en turnos distintos)
+    cash_session = models.ForeignKey(CashSession, on_delete=models.SET_NULL, null=True, blank=True, related_name='sale_payments', verbose_name="Sesión de Caja")
+    date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cobrado por")
+
+    def __str__(self):
+        return f"{self.payment_method} ${self.amount} (Venta #{self.sale_id})"
+
+    class Meta:
+        verbose_name = "Pago de Venta"
+        verbose_name_plural = "Pagos de Venta"
+        ordering = ['date', 'id']
+
 
 class SaleReturn(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='returns', verbose_name="Venta Original")

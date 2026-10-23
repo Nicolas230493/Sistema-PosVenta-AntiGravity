@@ -9,8 +9,12 @@ urlpatterns = [
     path('api/catalog/', views.pos_catalog, name='pos_catalog'),
     path('history/', views.sale_list, name='sale_list'),
     path('<int:pk>/return/', views.sale_return, name='sale_return'),
+    path('<int:pk>/cancel/', views.sale_cancel, name='sale_cancel'),
     path('<int:pk>/pdf/', views.export_sale_pdf, name='export_sale_pdf'),
     path('<int:pk>/ticket/', views.export_thermal_ticket, name='export_thermal_ticket'),
+    path('<int:pk>/ticket/escpos/', views.ticket_escpos, name='ticket_escpos'),
+    path('reservations/', views.reservation_list, name='reservation_list'),
+    path('reservations/<int:pk>/complete/', views.reservation_complete, name='reservation_complete'),
     path('<int:pk>/whatsapp/', views.whatsapp_ticket, name='whatsapp_ticket'),
     path('report/consolidated/', views.export_consolidated_report, name='export_consolidated_report'),
 ]

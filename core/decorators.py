@@ -6,6 +6,7 @@ from django.contrib import messages
 
 ADMIN_GROUPS = ('Administrador', 'Administradores')
 MANAGER_GROUPS = ADMIN_GROUPS + ('Encargado', 'Encargados')
+CASHIER_GROUPS = ('Cajero', 'Cajeros')
 
 
 def es_administrador(user):
@@ -19,6 +20,11 @@ def es_encargado_o_admin(user):
         or user.is_staff
         or user.groups.filter(name__in=MANAGER_GROUPS).exists()
     )
+
+
+def es_cajero_ciego(user):
+    """SPEC-FIN-06 §6.1: los Cajeros (que no sean Superuser/Administrador) cierran caja sin ver el esperado."""
+    return user.groups.filter(name__in=CASHIER_GROUPS).exists() and not es_administrador(user)
 
 
 def _role_required(check, error_message):

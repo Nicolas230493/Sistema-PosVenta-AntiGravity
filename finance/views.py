@@ -9,84 +9,54 @@ from django.db import models
 from decimal import Decimal, InvalidOperation
 from .models import CashSession, CashExpense, PaymentMethod
 from sales.models import Sale, SaleDetail
-from customers.models import Payment
-from products.models import InventoryMovement, Purchase
+from products.models import Purchase
 
 from django.http import HttpResponse
+from core.decorators import es_cajero_ciego, es_encargado_o_admin
+from .services import (
+    CashError, close_session, difference_label, net_profit, payment_method_summary,
+    refresh_session_totals, session_customer_payments, session_forced_adjustments,
+    session_stock_summary,
+)
 from .utils import generate_cash_report_pdf
+from datetime import datetime, time, timedelta
 import urllib.parse
-
-def session_sales(session):
-    """Ventas de una sesión de caja (por FK; las ventas previas a la FK se asocian por cajero y horario)."""
-    legacy = models.Q(cash_session__isnull=True, user=session.user, fecha_hora__gte=session.start_date)
-    if session.end_date:
-        legacy &= models.Q(fecha_hora__lte=session.end_date)
-    return Sale.objects.filter(models.Q(cash_session=session) | legacy)
-
-
-def session_customer_payments(session):
-    payments = Payment.objects.filter(user=session.user, date__gte=session.start_date)
-    if session.end_date:
-        payments = payments.filter(date__lte=session.end_date)
-    return payments
-
-
-def refresh_session_totals(session):
-    """Recalcula los totales de la sesión. Debe llamarse dentro de transaction.atomic()."""
-    cash_method = PaymentMethod.objects.filter(name='Efectivo').first()
-    sales = session_sales(session)
-
-    sales_cash = sales.filter(payment_method=cash_method).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
-    customer_payments_cash = session_customer_payments(session).filter(
-        payment_method=cash_method
-    ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
-    expenses_total = session.expenses.aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
-    digital_sales = sales.filter(payment_method__is_digital=True).aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
-
-    session.total_sales_cash = sales_cash + customer_payments_cash
-    session.total_expenses = expenses_total
-    session.total_sales_digital = digital_sales
-    session.expected_final_amount = session.initial_amount + session.total_sales_cash - expenses_total
-    session.save()
-
-
-def session_stock_summary(session):
-    """Kilos/unidades vendidos vs. auto-ajustes por desposte (SPEC-INV-02, auditoría de turno)."""
-    sales = session_sales(session)
-    refs = [f"Venta #{sale_id}" for sale_id in sales.values_list('id', flat=True)]
-    sold = SaleDetail.objects.filter(sale__in=sales).values(
-        'product_id', 'product__name', 'product__unit'
-    ).annotate(total=models.Sum('quantity')).order_by('product__name')
-    adjustments = dict(
-        InventoryMovement.objects.filter(movement_type='AUTO_ADJUST_IN', reference__in=refs)
-        .values_list('product_id').annotate(total=models.Sum('quantity'))
-    )
-    return [
-        {
-            'product': row['product__name'] or 'Prod. Eliminado',
-            'unit': row['product__unit'] or '',
-            'sold': row['total'],
-            'auto_adjusted': adjustments.get(row['product_id'], Decimal('0')),
-        }
-        for row in sold
-    ]
-
 
 @manager_required
 def export_cash_report(request, pk):
     session = get_object_or_404(CashSession, pk=pk)
 
-    sales_summary = session_sales(session).values('payment_method__name').annotate(total=models.Sum('total_amount'))
     payments_summary = session_customer_payments(session).values('payment_method__name').annotate(total=models.Sum('amount'))
     expenses = session.expenses.all()
+    adjustments, adjustments_total = session_forced_adjustments(session)
 
     response = HttpResponse(content_type='application/pdf')
     filename = f"Arqueo_Caja_{session.id}.pdf"
     response['Content-Disposition'] = f'attachment; filename={filename}'
 
-    generate_cash_report_pdf(response, session, sales_summary, payments_summary, expenses,
-                             stock_summary=session_stock_summary(session))
+    generate_cash_report_pdf(response, session, payment_method_summary(session), payments_summary, expenses,
+                             stock_summary=session_stock_summary(session),
+                             forced_adjustments=adjustments, forced_adjustments_total=adjustments_total)
     return response
+
+
+@manager_required
+def cash_session_report(request, pk):
+    """SPEC-FIN-06: reporte de cierre con diferencia destacada y panel de Ajustes Forzosos."""
+    session = get_object_or_404(CashSession, pk=pk)
+    if session.is_open:
+        with transaction.atomic():
+            refresh_session_totals(session)
+    adjustments, adjustments_total = session_forced_adjustments(session)
+    return render(request, 'finance/session_report.html', {
+        'session': session,
+        'difference_label': difference_label(session.difference),
+        'payment_summary': payment_method_summary(session),
+        'expenses': session.expenses.all(),
+        'adjustments': adjustments,
+        'adjustments_total': adjustments_total,
+        'stock_summary': session_stock_summary(session),
+    })
 
 @manager_required
 def cash_dashboard(request):
@@ -100,9 +70,9 @@ def cash_dashboard(request):
 
     total_revenue = sales_today.aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
 
-    # RECALIBRACIÓN: Calcular costo usando el precio de costo CAPTURADO en el momento de la venta
+    # Costo congelado en SaleDetail.unit_cost al momento de la venta
     total_cost = SaleDetail.objects.filter(sale__fecha_hora__date=today).aggregate(
-        total=models.Sum(models.F('quantity') * models.F('cost_price_at_sale'), output_field=models.DecimalField())
+        total=models.Sum(models.F('quantity') * models.F('unit_cost'), output_field=models.DecimalField())
     )['total'] or Decimal('0.00')
 
     gross_profit = total_revenue - total_cost
@@ -110,16 +80,17 @@ def cash_dashboard(request):
 
     other_payments = []
     stock_summary = []
+    adjustments = []
     if active_session:
         with transaction.atomic():
             refresh_session_totals(active_session)
 
-        cash_method = PaymentMethod.objects.filter(name='Efectivo').first()
-        cc_method = PaymentMethod.objects.filter(name='Cuenta Corriente').first()
-        other_payments = session_sales(active_session).exclude(
-            payment_method__in=[cash_method, cc_method]
-        ).values('payment_method__name').annotate(total=models.Sum('total_amount'))
+        other_payments = [
+            row for row in payment_method_summary(active_session)
+            if row['payment_method__name'] not in ('Efectivo', 'Cuenta Corriente')
+        ]
         stock_summary = session_stock_summary(active_session)
+        adjustments, _ = session_forced_adjustments(active_session)
 
     return render(request, 'finance/dashboard.html', {
         'session': active_session,
@@ -127,6 +98,7 @@ def cash_dashboard(request):
         'recent_sessions': recent_sessions,
         'other_payments': other_payments,
         'stock_summary': stock_summary,
+        'forced_adjustments': adjustments,
         'profit_stats': {
             'revenue': total_revenue,
             'cost': total_cost,
@@ -187,40 +159,86 @@ def add_expense(request):
 
     return redirect('finance:cash_dashboard')
 
+def _parse_amount(value, label):
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, AttributeError):
+        raise CashError(f"Monto inválido en '{label}'.")
+
+
 @login_required
 def close_cash(request):
+    """
+    SPEC-FIN-06 §6.1 — Cierre ciego: los Cajeros no ven el efectivo esperado;
+    declaran lo contado y el servidor calcula esperado y diferencia en el POST.
+    """
+    session = CashSession.get_active()
+    blind = es_cajero_ciego(request.user)
+
     if request.method == 'POST':
         try:
-            real_amount = Decimal(request.POST.get('real_amount') or '0.00')
-            if real_amount < 0:
-                raise ValueError("El monto final no puede ser negativo.")
-            notes = request.POST.get('notes', '')
+            declared_cash = request.POST.get('declared_cash', request.POST.get('real_amount'))
+            declared_digital = request.POST.get('declared_digital')
+            if declared_cash in (None, '') or declared_digital in (None, ''):
+                raise CashError("Debe informar el efectivo contado y el total de comprobantes digitales (0 si no hubo).")
+            session = close_session(
+                user=request.user,
+                declared_cash=_parse_amount(declared_cash, 'Efectivo contado'),
+                declared_digital=_parse_amount(declared_digital, 'Comprobantes digitales'),
+                notes=request.POST.get('notes', ''),
+            )
+        except CashError as e:
+            messages.error(request, f"Error al cerrar caja: {e}")
+            return redirect(_safe_next(request, 'finance:close_cash'))
 
-            with transaction.atomic():
-                session = CashSession.objects.select_for_update().filter(is_open=True).order_by('-id').first()
-                if not session:
-                    messages.error(request, "No se encontró una sesión activa para cerrar.")
-                    return redirect(_safe_next(request, 'finance:cash_dashboard'))
+        # La diferencia se revela recién con el turno cerrado de forma irreversible
+        label = difference_label(session.difference)
+        if session.difference == 0:
+            messages.success(request, f"Caja #{session.id} cerrada. {label}.")
+        elif session.difference > 0:
+            messages.info(request, f"Caja #{session.id} cerrada con {label}.")
+        else:
+            messages.warning(request, f"Caja #{session.id} cerrada con {label}.")
 
-                session.end_date = timezone.now()
-                refresh_session_totals(session)
-                session.real_final_amount = real_amount
-                session.notes = notes
-                session.is_open = False
-                session.save()
+        if es_encargado_o_admin(request.user):
+            return redirect('finance:cash_session_report', pk=session.pk)
+        return redirect(_safe_next(request, 'dashboard'))
 
-            difference = real_amount - session.expected_final_amount
-            if difference == 0:
-                messages.success(request, "Caja cerrada perfectamente. ¡Todo coincide!")
-            elif difference > 0:
-                messages.info(request, f"Caja cerrada con SOBRANTE de ${difference}.")
-            else:
-                messages.warning(request, f"Caja cerrada con FALTANTE de ${abs(difference)}.")
+    if not session:
+        messages.info(request, "No hay una caja abierta.")
+        return redirect('dashboard')
 
-        except (ValueError, InvalidOperation) as e:
-            messages.error(request, f"Error al cerrar caja: {str(e)}")
+    context = {'session': session, 'blind': blind, 'next': _safe_next(request, '')}
+    if not blind:
+        with transaction.atomic():
+            context['expected'] = refresh_session_totals(session)
+    return render(request, 'finance/close_cash.html', context)
 
-    return redirect(_safe_next(request, 'finance:cash_dashboard'))
+
+@manager_required
+def profit_report(request):
+    """SPEC-FIN-06 §6.2: Ganancia Neta = Ventas Netas - CMV - Gastos de Caja - Mermas."""
+    today = timezone.localdate()
+    try:
+        date_from = datetime.strptime(request.GET.get('from', ''), '%Y-%m-%d').date()
+    except ValueError:
+        date_from = today.replace(day=1)
+    try:
+        date_to = datetime.strptime(request.GET.get('to', ''), '%Y-%m-%d').date()
+    except ValueError:
+        date_to = today
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+
+    tz = timezone.get_current_timezone()
+    start = datetime.combine(date_from, time.min, tzinfo=tz)
+    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz)
+    return render(request, 'finance/profit_report.html', {
+        'report': net_profit(start, end),
+        'date_from': date_from,
+        'date_to': date_to,
+    })
+
 
 @manager_required
 def fiscal_reports(request):
@@ -285,13 +303,14 @@ def fiscal_reports(request):
 def whatsapp_report(request, pk):
     session = get_object_or_404(CashSession, pk=pk)
     fecha = timezone.localtime(session.end_date).strftime('%d/%m/%Y') if session.end_date else timezone.localdate().strftime('%d/%m/%Y')
-    efectivo = session.real_final_amount or Decimal('0.00')
-    digital = session.total_sales_digital
+    efectivo = session.declared_cash if session.declared_cash is not None else (session.real_final_amount or Decimal('0.00'))
+    digital = session.declared_digital if session.declared_digital is not None else session.total_sales_digital
     total = efectivo + digital
-    diferencia = efectivo - session.expected_final_amount
-    
-    estado_dif = f"Faltante: ${abs(diferencia)}" if diferencia < 0 else (f"Sobrante: ${diferencia}" if diferencia > 0 else "Sin diferencias")
-    
-    mensaje = f"📊 CIERRE IMPULSO SMART - {fecha} | Total: ${total} | Efec: ${efectivo} | Dig: ${digital} | {estado_dif}"
+    estado_dif = difference_label(session.difference)
+    adjustments, adjustments_total = session_forced_adjustments(session)
+
+    mensaje = f"📊 CIERRE IMPULSO SMART - Caja #{session.id} - {fecha} | Total: ${total} | Efec: ${efectivo} | Dig: ${digital} | {estado_dif}"
+    if adjustments:
+        mensaje += f" | Ajustes forzosos: {len(adjustments)} (${adjustments_total})"
     link = f"https://wa.me/?text={urllib.parse.quote(mensaje)}"
     return redirect(link)

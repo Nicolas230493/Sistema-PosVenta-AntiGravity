@@ -5,14 +5,14 @@
 {% block content %}
 <div class="container-fluid p-0">
     <!-- Alertas de Vencimiento (Regla de Oro: Banner Amarillo/Naranja 30 días) -->
-    {% if vencimientos_30_dias %}
+    {% if vencimientos %}
         <div class="alert alert-warning border-0 shadow-sm rounded-4 mb-4 d-flex align-items-center">
             <div class="flex-shrink-0 bg-white p-2 rounded-circle me-3">
                 <i class="bi bi-calendar-event-fill text-warning fs-4"></i>
             </div>
             <div>
                 <h6 class="mb-0 fw-bold">PRODUCTOS POR VENCER</h6>
-                <p class="mb-0 small opacity-75">Hay {{ vencimientos_30_dias.count }} productos que vencen en los próximos 30 días.</p>
+                <p class="mb-0 small opacity-75">Hay {{ vencimientos|length }} producto{{ vencimientos|length|pluralize }} vencido{{ vencimientos|length|pluralize }} o que vence{{ vencimientos|length|pluralize:"n" }} en los próximos {{ dias_alerta }} días.</p>
             </div>
         </div>
     {% endif %}
@@ -150,13 +150,26 @@
                 </div>
                 <div class="card-body p-0">
                     <div class="list-group list-group-flush">
-                        {% for p in vencimientos_30_dias %}
-                            <div class="list-group-item py-3 px-4 d-flex justify-content-between align-items-center bg-transparent border-light">
-                                <span class="small fw-medium">{{ p.name }}</span>
-                                <span class="badge bg-info bg-opacity-10 text-info rounded-pill">{{ p.expiry_date|date:"d/m" }}</span>
+                        {% for p in vencimientos %}
+                            <div class="list-group-item py-3 px-4 bg-transparent border-light">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="small fw-medium">{{ p.name }} <span class="opacity-50">({{ p.stock|floatformat:"-3" }})</span></span>
+                                    {% if p.expiry_date < today %}
+                                        <span class="badge bg-danger rounded-pill">Vencido {{ p.expiry_date|date:"d/m" }}</span>
+                                    {% else %}
+                                        <span class="badge bg-info bg-opacity-10 text-info rounded-pill">{{ p.expiry_date|date:"d/m" }}</span>
+                                    {% endif %}
+                                </div>
+                                {% if p.descuento_activo %}<div class="small text-success mt-1"><i class="bi bi-tag-fill me-1"></i>Descuento activo: {{ p.descuento_activo|floatformat:"-2" }}%</div>{% endif %}
+                                {% if puede_liquidar %}
+                                <form method="post" action="{% url 'apply_expiry_discount' pk=p.pk %}" class="d-flex gap-1 mt-2">
+                                    {% csrf_token %}
+                                    {% for pct in descuentos_rapidos %}
+                                    <button type="submit" name="percent" value="{{ pct }}" class="btn btn-sm btn-outline-warning rounded-pill py-0 px-2">-{{ pct }}%</button>
+                                    {% endfor %}
+                                </form>
+                                {% endif %}
                             </div>
-                        {% empty %}
-                            <div class="p-4 text-center opacity-75 small">Sin vencimientos en los próximos 30 días</div>
                         {% endfor %}
                     </div>
                 </div>

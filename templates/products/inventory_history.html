@@ -25,6 +25,7 @@
                 <th>Tipo</th>
                 <th>Cantidad</th>
                 <th>Referencia</th>
+                <th>Motivo / Auditoría</th>
                 <th class="pe-4">Usuario</th>
             </tr>
         </thead>
@@ -32,27 +33,44 @@
             {% for m in movements %}
             <tr>
                 <td class="ps-4 small">{{ m.date|date:"d/m/Y H:i" }}</td>
-                <td class="fw-bold">{{ m.product.name }}</td>
+                <td class="fw-bold">
+                    <a href="{% url 'products:product_kardex' pk=m.product.pk %}" class="text-decoration-none">
+                        {{ m.product.name }}
+                    </a>
+                </td>
                 <td>
-                    {% if m.movement_type == 'IN' %}
+                    {% if m.movement_type == 'PURCHASE_IN' or m.movement_type == 'IN' %}
                         <span class="badge bg-success-subtle text-success rounded-pill border border-success-subtle px-3">
-                            <i class="bi bi-arrow-down-left me-1"></i>Entrada
+                            <i class="bi bi-box-arrow-in-down me-1"></i>Entrada / Compra
+                        </span>
+                    {% elif m.movement_type == 'SALE_CANCEL_IN' %}
+                        <span class="badge bg-info-subtle text-info rounded-pill border border-info-subtle px-3">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Anulación Venta
+                        </span>
+                    {% elif m.movement_type == 'AUTO_ADJUST_IN' %}
+                        <span class="badge bg-primary-subtle text-primary rounded-pill border border-primary-subtle px-3">
+                            <i class="bi bi-magic me-1"></i>Auto-Ajuste POS
+                        </span>
+                    {% elif m.movement_type == 'ADJ' %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill border border-warning-subtle px-3">
+                            <i class="bi bi-sliders me-1"></i>Ajuste Manual
                         </span>
                     {% else %}
                         <span class="badge bg-danger-subtle text-danger rounded-pill border border-danger-subtle px-3">
-                            <i class="bi bi-arrow-up-right me-1"></i>Salida
+                            <i class="bi bi-box-arrow-up me-1"></i>Salida / Venta
                         </span>
                     {% endif %}
                 </td>
-                <td class="fw-bold">{{ m.quantity }}</td>
+                <td class="fw-bold">{{ m.quantity|floatformat:"-3" }} {{ m.product.get_unit_display }}</td>
                 <td>{{ m.reference|default:"---" }}</td>
+                <td class="small text-muted">{{ m.reason|default:"---" }}</td>
                 <td class="pe-4 small">
-                    <i class="bi bi-person-circle me-1 opacity-50"></i>{{ m.user.username }}
+                    <i class="bi bi-person-circle me-1 opacity-50"></i>{{ m.user.username|default:"Sistema" }}
                 </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6" class="text-center py-5">
+                <td colspan="7" class="text-center py-5">
                     <i class="bi bi-clock-history fs-1 text-body-secondary mb-3 d-block"></i>
                     <p class="text-body-secondary">No hay movimientos registrados en el historial.</p>
                 </td>

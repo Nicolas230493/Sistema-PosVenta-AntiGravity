@@ -14,6 +14,7 @@
                     </div>
                     <h4 class="fw-bold mb-1">{{ customer.full_name }}</h4>
                     <span class="badge bg-light text-muted border px-3 rounded-pill">ID: {{ customer.dni_cuit }}</span>
+                    {% if customer.price_list %}<span class="badge bg-primary-subtle text-primary px-3 rounded-pill">{{ customer.price_list.name }}</span>{% endif %}
                 </div>
                 
                 <div class="mb-3">
@@ -58,9 +59,16 @@
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-header bg-transparent border-0 py-4 px-4 d-flex justify-content-between align-items-center">
                 <h5 class="fw-bold mb-0">Resumen de Movimientos (Ledger)</h5>
-                <a href="{% url 'customers:export_statement_pdf' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3" target="_blank">
-                    <i class="bi bi-file-earmark-pdf me-1"></i> PDF
-                </a>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'customers:export_statement_pdf' pk=customer.pk %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3" target="_blank">
+                        <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+                    </a>
+                    {% if customer.phone %}
+                    <a href="{% url 'customers:whatsapp_statement' pk=customer.pk %}" class="btn btn-outline-success btn-sm rounded-pill px-3" target="_blank">
+                        <i class="bi bi-whatsapp me-1"></i> Enviar estado de cuenta
+                    </a>
+                    {% endif %}
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">

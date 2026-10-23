@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Ganancia Neta Real{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small fw-bold">Desde</label>
+            <input type="date" name="from" class="form-control border-0 bg-light" value="{{ date_from|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small fw-bold">Hasta</label>
+            <input type="date" name="to" class="form-control border-0 bg-light" value="{{ date_to|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-4 text-end">
+            <button type="submit" class="btn btn-primary rounded-pill px-4"><i class="bi bi-filter me-2"></i>Calcular</button>
+        </div>
+    </form>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-1">Estado de resultados</h5>
+                <p class="small opacity-75 mb-4">{{ date_from|date:"d/m/Y" }} al {{ date_to|date:"d/m/Y" }} · {{ report.sales_count }} venta{{ report.sales_count|pluralize }} completada{{ report.sales_count|pluralize }}</p>
+
+                <div class="d-flex justify-content-between mb-1"><span>Ventas brutas</span><span>${{ report.gross_sales|floatformat:2 }}</span></div>
+                <div class="d-flex justify-content-between mb-1 small opacity-75"><span>(-) Devoluciones</span><span>-${{ report.returns|floatformat:2 }}</span></div>
+                <div class="d-flex justify-content-between fw-bold border-top pt-2 mb-3"><span>Ventas Netas</span><span>${{ report.net_sales|floatformat:2 }}</span></div>
+
+                <div class="d-flex justify-content-between mb-1"><span>(-) CMV (costo histórico congelado)</span><span class="text-danger">-${{ report.cmv|floatformat:2 }}</span></div>
+                <div class="d-flex justify-content-between fw-bold border-top pt-2 mb-3"><span>Utilidad Bruta</span><span>${{ report.gross_profit|floatformat:2 }}</span></div>
+
+                <div class="d-flex justify-content-between mb-1"><span>(-) Gastos de Caja</span><span class="text-danger">-${{ report.expenses|floatformat:2 }}</span></div>
+                <div class="d-flex justify-content-between mb-3"><span>(-) Mermas (StockLoss al costo)</span><span class="text-danger">-${{ report.losses|floatformat:2 }}</span></div>
+
+                <div class="d-flex justify-content-between align-items-center rounded-3 p-3 {% if report.net_profit >= 0 %}bg-success-subtle{% else %}bg-danger-subtle{% endif %}">
+                    <span class="fs-5 fw-bold">Ganancia Neta</span>
+                    <span class="text-end">
+                        <span class="fs-4 fw-bold d-block">${{ report.net_profit|floatformat:2 }}</span>
+                        <span class="small">Margen neto {{ report.net_margin|floatformat:1 }}%</span>
+                    </span>
+                </div>
+                <p class="small opacity-50 mt-3 mb-0">No incluye ventas anuladas ni pedidos con seña pendientes. Los pagos a proveedores no se cuentan como gasto porque su costo ya está en el CMV.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

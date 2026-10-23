@@ -11,5 +11,6 @@ urlpatterns = [
     path('<int:pk>/payment/', views.customer_payment, name='customer_payment'),
     path('<int:pk>/reminder/', views.whatsapp_reminder, name='whatsapp_reminder'),
     path('<int:pk>/statement/pdf/', views.export_statement_pdf, name='export_statement_pdf'),
+    path('<int:pk>/statement/whatsapp/', views.whatsapp_statement, name='whatsapp_statement'),
     path('<int:pk>/detail/', views.customer_detail, name='customer_detail'),
 ]

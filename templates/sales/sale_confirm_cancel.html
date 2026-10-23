@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block page_title %}Anular Venta #{{ sale.id }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-danger text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirmación de Anulación de Venta</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="alert alert-warning border-0 small mb-4">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    <strong>Atención:</strong> Esta acción anulará la venta <strong>#{{ sale.id|stringformat:"05d" }}</strong> por <strong>${{ sale.total_amount }}</strong>. Se revertirán exactamente todas las cantidades vendidas al stock de cada producto y se registrarán los movimientos auditables <code>SALE_CANCEL_IN</code>.
+                </div>
+
+                <div class="mb-4">
+                    <h6 class="fw-bold mb-2">Detalle de Productos a Revertir:</h6>
+                    <ul class="list-group list-group-flush border rounded-3">
+                        {% for detail in sale.details.all %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ detail.product.name|default:"(Producto Eliminado)" }}</strong>
+                                <span class="text-muted small ms-2">x ${{ detail.price }}</span>
+                            </div>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">
+                                +{{ detail.quantity }} {{ detail.product.get_unit_display|default:"" }}
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label for="reason" class="form-label fw-bold">Motivo de Anulación <span class="text-danger">*</span></label>
+                        <textarea name="reason" id="reason" class="form-control" rows="3" placeholder="Ej: Error de cobro, devolución completa del cliente, cobro duplicado..." required></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-secondary rounded-pill px-4">
+                            <i class="bi bi-x-circle me-1"></i>Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-danger rounded-pill px-4 shadow">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Confirmar Anulación y Revertir Stock
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

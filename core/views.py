@@ -29,8 +29,17 @@ from django.db.models.functions import ExtractHour
 import urllib.parse
 import json
 
+from .decorators import es_encargado_o_admin, manager_required
 from .forms import ConfiguracionForm
-from .models import ConfiguracionSistema
+from .models import ActivityLog, ConfiguracionSistema
+from products.services import expiring_products
+from sales.models import Promotion
+from decimal import Decimal, InvalidOperation
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.views.decorators.http import require_POST
+
+EXPIRY_PROMO_PREFIX = "Liquidación por vencimiento"
 
 @login_required
 def configuracion_view(request):
@@ -123,10 +132,17 @@ def dashboard_view(request):
     # 1. Alertas Críticas
     agotados = Product.objects.filter(stock__lte=0)
     por_reponer = Product.objects.filter(stock__gt=0, stock__lte=F('min_stock'))
-    vencimientos_30_dias = Product.objects.filter(expiry_date__range=[today, today + timedelta(days=30)]).order_by('expiry_date')
-    
-    if vencimientos_30_dias.exists():
-        messages.warning(request, f"Atención: Hay {vencimientos_30_dias.count()} productos próximos a vencer (30 días).")
+    # SPEC-INV-09 §9.1: vencen dentro de N días configurables o ya vencidos
+    dias_alerta = ConfiguracionSistema.get_config().dias_alerta_vencimiento
+    vencimientos = list(expiring_products(dias_alerta, today))
+    liquidaciones = dict(
+        Promotion.objects.filter(
+            active=True, promo_type='PERCENT', name__startswith=EXPIRY_PROMO_PREFIX,
+            start_date__lte=today, end_date__gte=today,
+        ).values_list('products__id', 'discount_percentage')
+    )
+    for p in vencimientos:
+        p.descuento_activo = liquidaciones.get(p.id)
 
     # 2. Resumen del Día para WhatsApp
     sales_today = Sale.objects.filter(fecha_hora__date=today)
@@ -201,7 +217,11 @@ def dashboard_view(request):
     context = {
         'agotados': agotados,
         'por_reponer': por_reponer,
-        'vencimientos_30_dias': vencimientos_30_dias,
+        'vencimientos': vencimientos,
+        'dias_alerta': dias_alerta,
+        'descuentos_rapidos': (10, 20, 30, 50),
+        'today': today,
+        'puede_liquidar': es_encargado_o_admin(request.user),
         'wa_url': wa_url,
         'bajas_recientes': bajas_recientes[:10],
         'hour_labels': json.dumps(hour_labels),
@@ -209,10 +229,58 @@ def dashboard_view(request):
         'totales': {
             'agotados': agotados.count(),
             'reponer': por_reponer.count(),
-            'vencen': vencimientos_30_dias.count(),
+            'vencen': len(vencimientos),
             'bajas_mes': bajas_recientes.count(),
             'ventas_hoy': float(total_revenue)
         }
     }
 
     return render(request, 'core/dashboard.html', context)
+
+
+@manager_required
+@require_POST
+def apply_expiry_discount(request, pk):
+    """
+    SPEC-INV-09 §9.1: descuento promocional rápido para un producto por vencer.
+    Crea (o actualiza) una Promoción porcentual vigente hasta la fecha de vencimiento,
+    así el precio de lista no se modifica y el descuento caduca solo.
+    """
+    product = get_object_or_404(Product, pk=pk)
+    try:
+        percent = Decimal(request.POST.get('percent', ''))
+    except InvalidOperation:
+        percent = Decimal('0')
+    if not (Decimal('0') < percent <= Decimal('90')):
+        messages.error(request, "El descuento debe estar entre 1% y 90%.")
+        return redirect('dashboard')
+
+    today = timezone.localdate()
+    end_date = max(product.expiry_date or today, today)
+    with transaction.atomic():
+        promo = Promotion.objects.filter(
+            active=True, promo_type='PERCENT', name__startswith=EXPIRY_PROMO_PREFIX,
+            products=product, end_date__gte=today,
+        ).first()
+        if promo:
+            promo.discount_percentage = percent
+            promo.start_date = today
+            promo.end_date = end_date
+            promo.save()
+        else:
+            promo = Promotion.objects.create(
+                name=f"{EXPIRY_PROMO_PREFIX}: {product.name}"[:100],
+                promo_type='PERCENT',
+                discount_percentage=percent,
+                start_date=today,
+                end_date=end_date,
+            )
+            promo.products.add(product)
+        ActivityLog.objects.create(
+            user=request.user,
+            action=f"Descuento por vencimiento {percent}%: {product.name}",
+            module="Inventario",
+            details=f"Vence: {product.expiry_date} | Promo #{promo.id} hasta {end_date}",
+        )
+    messages.success(request, f"Descuento del {percent}% aplicado a {product.name} hasta el {end_date:%d/%m/%Y}.")
+    return redirect('dashboard')

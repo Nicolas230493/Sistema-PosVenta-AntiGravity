@@ -32,6 +32,11 @@
             <tr>
                 <td class="ps-4">
                     <span class="badge bg-body-secondary text-body border font-monospace">#{{ sale.id|stringformat:"05d" }}</span>
+                    {% if sale.is_cancelled %}
+                        <span class="badge bg-danger rounded-pill ms-1" title="Motivo: {{ sale.cancel_reason|default:'' }}">Anulada</span>
+                    {% elif sale.status == 'RESERVED' %}
+                        <span class="badge bg-warning text-dark rounded-pill ms-1">Pedido c/ seña</span>
+                    {% endif %}
                 </td>
                 <td class="small">{{ sale.fecha_hora|date:"d/m/Y H:i" }}</td>
                 <td>
@@ -46,16 +51,26 @@
                         {% else %}
                             <i class="bi bi-journal-text me-1 text-warning"></i>
                         {% endif %}
-                        {{ sale.payment_method.name }}
+                        {% with n=sale.payments.all|length %}{% if n > 1 %}Mixto ({% for p in sale.payments.all %}{{ p.payment_method.name }}{% if not forloop.last %} + {% endif %}{% endfor %}){% else %}{{ sale.payment_method.name|default:"Sin cobro" }}{% endif %}{% endwith %}
                     </span>
                 </td>
-                <td class="fw-bold text-primary">${{ sale.total_amount }}</td>
+                <td class="fw-bold {% if sale.is_cancelled %}text-decoration-line-through text-muted{% else %}text-primary{% endif %}">
+                    ${{ sale.total_amount }}
+                </td>
                 <td class="text-end pe-4">
                     <div class="btn-group shadow-sm rounded-3">
-                        <a href="{% url 'sales:sale_return' pk=sale.pk %}" class="btn btn-outline-warning btn-sm border" title="Procesar Devolución">
-                            <i class="bi bi-arrow-counterclockwise"></i>
+                        {% if not sale.is_cancelled %}
+                            <a href="{% url 'sales:sale_cancel' pk=sale.pk %}" class="btn btn-outline-danger btn-sm border" title="Anular Venta Completa (Reversión de Stock)">
+                                <i class="bi bi-x-circle"></i>
+                            </a>
+                            <a href="{% url 'sales:sale_return' pk=sale.pk %}" class="btn btn-outline-warning btn-sm border" title="Procesar Devolución">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </a>
+                        {% endif %}
+                        <a href="{% url 'sales:ticket_escpos' pk=sale.pk %}?print=0" target="_blank" class="btn btn-outline-secondary btn-sm border" title="Ticket térmico">
+                            <i class="bi bi-printer"></i>
                         </a>
-                        <a href="{% url 'sales:export_sale_pdf' pk=sale.pk %}" class="btn btn-outline-danger btn-sm border" title="Descargar PDF">
+                        <a href="{% url 'sales:export_sale_pdf' pk=sale.pk %}" class="btn btn-outline-secondary btn-sm border" title="Descargar PDF">
                             <i class="bi bi-file-pdf"></i>
                         </a>
                         <a href="{% url 'sales:whatsapp_ticket' pk=sale.pk %}" class="btn btn-outline-success btn-sm border" title="Enviar WhatsApp" target="_blank">

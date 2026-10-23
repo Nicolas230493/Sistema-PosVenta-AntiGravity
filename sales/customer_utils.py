@@ -2,9 +2,10 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib import colors
+from django.utils import timezone
 
-def generate_customer_statement_pdf(response, customer, transactions):
-    """Genera un resumen de cuenta (ventas y pagos) para un cliente"""
+def generate_customer_statement_pdf(response, customer, entries):
+    """Estado de cuenta corriente (SPEC-CRM-10 §10.2): movimientos CurrentAccount en orden cronológico."""
     p = canvas.Canvas(response, pagesize=A4)
     width, height = A4
     margin = 2 * cm
@@ -23,21 +24,25 @@ def generate_customer_statement_pdf(response, customer, transactions):
     y = height - margin - 3 * cm
     p.setFont("Helvetica-Bold", 10)
     p.drawString(margin, y, "Fecha")
-    p.drawString(margin + 3*cm, y, "Concepto")
-    p.drawRightString(width - margin - 3*cm, y, "Debe (Venta)")
-    p.drawRightString(width - margin, y, "Haber (Pago)")
+    p.drawString(margin + 2.5*cm, y, "Concepto")
+    p.drawRightString(width - margin - 6*cm, y, "Debe (Fiado)")
+    p.drawRightString(width - margin - 3*cm, y, "Haber (Entrega)")
+    p.drawRightString(width - margin, y, "Saldo")
     p.line(margin, y - 0.2*cm, width - margin, y - 0.2*cm)
-    
+
     y -= 0.8 * cm
     p.setFont("Helvetica", 9)
-    for t in transactions:
-        p.drawString(margin, y, t['date'].strftime('%d/%m/%Y'))
-        p.drawString(margin + 3*cm, y, t['concept'])
-        if t['type'] == 'SALE':
-            p.drawRightString(width - margin - 3*cm, y, f"${t['amount']}")
+    if not entries:
+        p.drawString(margin, y, "Sin movimientos en cuenta corriente.")
+    for entry in entries:
+        p.drawString(margin, y, timezone.localtime(entry.date).strftime('%d/%m/%Y'))
+        p.drawString(margin + 2.5*cm, y, (entry.reference or entry.get_entry_type_display())[:40])
+        if entry.entry_type == 'DEBT':
+            p.drawRightString(width - margin - 6*cm, y, f"${entry.amount}")
         else:
-            p.drawRightString(width - margin, y, f"${t['amount']}")
-        
+            p.drawRightString(width - margin - 3*cm, y, f"${entry.amount}")
+        p.drawRightString(width - margin, y, f"${entry.balance_after}")
+
         y -= 0.5 * cm
         if y < 3*cm:
             p.showPage()

@@ -6,42 +6,60 @@ from django.db.models import Q
 from django.db import transaction
 from decimal import Decimal
 from django.http import HttpResponse
+from django.utils import timezone
 from sales.customer_utils import generate_customer_statement_pdf
-from sales.models import Sale
 from finance.models import PaymentMethod
 from .models import Customer, Payment
 from .forms import CustomerForm
 import urllib.parse
 
+STATEMENT_WHATSAPP_ENTRIES = 15
+
+
+def statement_entries(customer):
+    """
+    SPEC-CRM-10 §10.2: detalle cronológico de la cuenta corriente (CurrentAccount):
+    compras fiadas (DEBT), entregas parciales/pagos (CREDIT) y saldo resultante.
+    """
+    return list(customer.account_ledger.order_by('date', 'id'))
+
+
 @login_required
 def export_statement_pdf(request, pk):
     customer = get_object_or_404(Customer, pk=pk)
-    sales = Sale.objects.filter(customer=customer).order_by('fecha_hora')
-    payments = Payment.objects.filter(customer=customer).order_by('date')
-    
-    # Combinar y ordenar transacciones
-    transactions = []
-    for s in sales:
-        transactions.append({
-            'date': s.fecha_hora,
-            'concept': f"Venta #{s.id}",
-            'type': 'SALE',
-            'amount': s.total_amount
-        })
-    for p in payments:
-        transactions.append({
-            'date': p.date,
-            'concept': f"Pago #{p.id} ({p.payment_method.name if p.payment_method else '---'})",
-            'type': 'PAYMENT',
-            'amount': p.amount
-        })
-    
-    transactions.sort(key=lambda x: x['date'])
-    
     response = HttpResponse(content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename=Estado_Cuenta_{customer.full_name}.pdf'
-    generate_customer_statement_pdf(response, customer, transactions)
+    response['Content-Disposition'] = f'attachment; filename=Estado_Cuenta_{customer.id}.pdf'
+    generate_customer_statement_pdf(response, customer, statement_entries(customer))
     return response
+
+
+@login_required
+def whatsapp_statement(request, pk):
+    """Estado de cuenta resumido por WhatsApp con los últimos movimientos y el saldo actual."""
+    customer = get_object_or_404(Customer, pk=pk)
+    phone = ''.join(ch for ch in (customer.phone or '') if ch.isdigit())
+    if not phone:
+        messages.error(request, "El cliente no tiene un teléfono registrado.")
+        return redirect('customers:customer_detail', pk=pk)
+
+    entries = statement_entries(customer)
+    recent = entries[-STATEMENT_WHATSAPP_ENTRIES:]
+    lines = [f"*Estado de cuenta - {customer.full_name}*"]
+    if len(entries) > len(recent):
+        lines.append(f"(últimos {len(recent)} de {len(entries)} movimientos)")
+    for entry in recent:
+        fecha = timezone.localtime(entry.date).strftime('%d/%m/%Y')
+        if entry.entry_type == 'DEBT':
+            concepto = f"Compra fiada {entry.reference or ''}".strip()
+            monto = f"+${entry.amount}"
+        else:
+            concepto = f"Entrega/Pago {entry.reference or ''}".strip()
+            monto = f"-${entry.amount}"
+        lines.append(f"{fecha} | {concepto}: {monto} | Saldo ${entry.balance_after}")
+    lines.append(f"*SALDO DEUDOR ACTUAL: ${customer.balance}*")
+    lines.append("¡Muchas gracias!")
+    return redirect(f"https://wa.me/{phone}?text={urllib.parse.quote(chr(10).join(lines))}")
+
 
 @login_required
 def customer_payment(request, pk):

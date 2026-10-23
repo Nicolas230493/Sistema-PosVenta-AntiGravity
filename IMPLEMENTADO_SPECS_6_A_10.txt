@@ -1,0 +1,177 @@
+IMPLEMENTACIÓN SPECS 6 A 10 — Impulso Smart POS
+Fecha: 23/10/2026
+Estado: implementado y testeado (104 tests OK: 62 previos + 42 nuevos). SIN COMMIT.
+        `manage.py check` y `makemigrations --check` sin problemas.
+
+ENTORNO Y BASE LOCAL (23/10/2026)
+- Migraciones aplicadas en db.sqlite3 (integrity_check OK). Copia previa al
+  migrate guardada fuera del repo.
+- El .venv funciona: Django 6.1.2 y todas las dependencias de
+  requirements.txt instaladas. Usar directamente:
+  .venv/bin/python manage.py ...   (o: source .venv/bin/activate)
+
+======================================================================
+1. SPEC-FIN-06 — Cierre ciego, Ganancia Neta y Ajustes Forzosos
+======================================================================
+Modelos / migraciones
+- finance.CashSession: declared_cash, declared_digital, expected_cash,
+  expected_digital, difference (Decimal 12,2). real_final_amount se sigue
+  llenando (= declared_cash) por compatibilidad.
+- finance.CashExpense.kind: EXPENSE | SUPPLIER_PAYMENT. La migración marca los
+  egresos "Pago OC #..." existentes como SUPPLIER_PAYMENT y completa los campos
+  nuevos en cierres ya hechos.
+- sales.SaleDetail: cost_price_at_sale renombrado a unit_cost (RenameField,
+  conserva historial, max_digits 12).
+- products.StockLoss: quantity ahora Decimal(10,3); nuevo unit_cost (costo
+  congelado; si queda vacío se toma product.cost_price al guardar).
+
+Lógica (finance/services.py — NUEVO)
+- refresh_session_totals / compute_expected: totales del turno basados en
+  SalePayment (cobros que ingresaron en ese turno). Ventas sin SalePayment
+  (cargadas fuera del POS / admin) se cuentan por Sale.payment_method.
+  Las ventas ANULADAS ya no cuentan en el esperado (cambio de comportamiento).
+- close_session: el esperado se calcula en el POST; guarda declarado,
+  esperado y diferencia; deja ActivityLog del cierre.
+- session_forced_adjustments: movimientos AUTO_ADJUST_IN del turno, valuados
+  al precio de venta cobrado en esa venta.
+- net_profit(start, end): Ventas Netas - CMV - Gastos de Caja - Mermas.
+  * Ventas Netas: ventas COMPLETED (sin anuladas ni pedidos pendientes) menos
+    devoluciones. Incluye IVA (igual que el resto de los reportes).
+  * CMV: cantidad x unit_cost, neto de devoluciones.
+  * Gastos: solo CashExpense kind=EXPENSE (pagos a proveedores NO son gasto).
+  * Mermas: StockLoss x unit_cost.
+
+Vistas / URLs
+- /finance/close/            GET formulario + POST cierre (login_required).
+  Ciego si el usuario está en grupo Cajero/Cajeros y no es admin
+  (core/decorators.py: es_cajero_ciego). Exige declared_cash y declared_digital.
+- /finance/session/<pk>/     reporte de cierre con diferencia destacada y
+                             panel de Ajustes Forzosos (manager_required).
+- /finance/profit/           Ganancia Neta Real con rango de fechas
+                             (solo Administrador: agregado al middleware).
+- PDF de arqueo y WhatsApp del cierre: incluyen declarado/esperado,
+  diferencia y ajustes forzosos.
+Templates: finance/close_cash.html, finance/session_report.html,
+           finance/profit_report.html; dashboard de caja actualizado.
+Nav: "Cerrar Caja" visible para todos; "Ganancia Neta" en sección admin.
+
+======================================================================
+2. SPEC-SUP-07 — CPP y Cuentas Corrientes de Proveedores
+======================================================================
+Modelos
+- suppliers.Supplier.balance (lo que se le debe al proveedor).
+- suppliers.SupplierAccountMovement: DEBIT/CREDIT, amount, due_date,
+  purchase_order, payment_source (CASH/BANK), cash_expense, balance_after.
+- products.PriceLog: price_type (SALE/COST) y reason.
+
+Lógica (suppliers/services.py — NUEVO)
+- weighted_average_cost: CPP = (max(stock,0) x costo + cant x costo_compra) /
+  (max(stock,0) + cant), redondeado a 2 decimales.
+- receive_stock: CPP + stock + PriceLog(COST) + InventoryMovement PURCHASE_IN.
+  Se usa en: recepción de OC, compras directas (purchase_create) y remitos.
+- receive_purchase_order: todo atómico; registra DEBIT (vencimiento por
+  defecto +30 días). No permite recibir dos veces.
+- register_supplier_payment: CREDIT; desde caja crea CashExpense
+  SUPPLIER_PAYMENT en el turno abierto; desde banco no toca la caja.
+
+Vistas
+- Órdenes de compra: al recibir se puede indicar vencimiento; pagar por Caja
+  o Banco; una OC recibida ya no se puede cancelar ni volver atrás.
+- /suppliers/<pk>/account/      cuenta corriente del proveedor (manager).
+- /suppliers/<pk>/account/pay/  registrar pago.
+- Listado de proveedores: columna de saldo + acceso a la cuenta.
+
+======================================================================
+3. SPEC-POS-08 — Pagos mixtos, Señas y Ticket térmico
+======================================================================
+Modelos
+- sales.Sale.status: COMPLETED | RESERVED | CANCELLED. is_cancelled se
+  mantiene sincronizado con status (Sale.save). Sale.payment_method = método
+  de mayor monto (compatibilidad con reportes viejos).
+- sales.SalePayment: sale, payment_method, amount, reference, cash_session
+  (turno donde ingresó el dinero), date, user. La migración crea un
+  SalePayment por cada venta existente.
+
+Lógica (sales/services.py)
+- create_sale acepta payments=[{"method_id", "amount", "reference"}] o un
+  único payment_method_id. COMPLETED: suma de pagos == total exacto.
+  RESERVED: seña <= total (puede ser 0 / sin pagos).
+- La deuda de Cuenta Corriente se registra por la PARTE fiada (se sacó de la
+  señal post_save, que corría antes de existir los pagos).
+- complete_reservation: cobra el saldo exacto en el turno abierto actual y
+  pasa a COMPLETED.
+- cancel_sale: revierte solo lo fiado y deja asiento CREDIT en CurrentAccount.
+- Sync offline (/api/sales/sync/) acepta "payments" o "payment_method_id"
+  y "status".
+- Pedidos RESERVED descuentan stock al crearse (no es reserva aparte).
+
+POS (templates/sales/pos.html + static/js/pos-offline.js)
+- Selector Venta / Pedido con seña; filas de cobro con varios medios y
+  N° de comprobante; aviso si falta o sobra.
+- Con un solo medio se envía solo el método (el servidor cobra su total,
+  que puede incluir promos calculadas solo del lado servidor).
+- Ticket: abre el ticket HTML ESC/POS; ancho 58/80mm recordado en el equipo.
+- Service Worker: caché subida a impulso-pos-v2.
+
+Vistas / templates
+- /pos/<pk>/ticket/escpos/?w=58|80  -> sales/templates/sales/ticket_escpos.html
+  (ancho fijo, @media print, window.print() automático).
+- /pos/reservations/                 listado de pedidos con seña.
+- /pos/reservations/<pk>/complete/   cobrar saldo y entregar.
+- Historial: estado, "Mixto (...)" y botón de ticket térmico.
+
+======================================================================
+4. SPEC-INV-09 — Vencimientos y Compra Inteligente
+======================================================================
+- core.ConfiguracionSistema.dias_alerta_vencimiento (default 7), editable en
+  Configuración.
+- products/services.py (NUEVO): expiring_products (stock > 0 y vencimiento
+  <= hoy + N días, incluye vencidos) y purchase_suggestions:
+  V14 = vendido 14 días / 14 (excluye anuladas);
+  Sugerencia = max(0, V14 x días cobertura - stock), redondeo hacia arriba,
+  agrupado por proveedor.
+- Dashboard: lista vencidos/próximos con botones -10/20/30/50%.
+  /vencimientos/<pk>/descuento/ (manager): crea o actualiza una Promoción
+  PERCENT "Liquidación por vencimiento" válida hasta la fecha de vencimiento
+  (no toca el precio de lista).
+- Asistente de pedidos: usa la sugerencia V14 con días de cobertura
+  configurables (default 7) y genera las OC por proveedor.
+- NOTA: se usó el campo existente expiry_date (la spec dice expiration_date).
+
+======================================================================
+5. SPEC-CRM-10 — Segmentos y Estado de Cuenta
+======================================================================
+- customers.Customer.price_list (FK opcional a PriceList), editable en el
+  formulario del cliente.
+- POS: al elegir cliente se cambia sola la lista de precios.
+  Servidor: si no llega price_list se usa la del cliente.
+- Estado de cuenta desde CurrentAccount (fiados, entregas y saldo):
+  PDF con columnas Debe/Haber/Saldo y
+  /customers/<pk>/statement/whatsapp/ (últimos 15 movimientos + saldo).
+
+======================================================================
+ERRORES PREVIOS CORREGIDOS (afectaban la rentabilidad)
+======================================================================
+- Devolución sumaba el stock dos veces (vista + señal SaleReturnDetail).
+  Se quitó la parte de stock de la señal.
+- La reversión de Cuenta Corriente en devoluciones siempre era $0 (la señal
+  corría antes de calcular el total). Se movió a la vista.
+- Las devoluciones de pedidos con seña pendientes están bloqueadas.
+
+======================================================================
+TESTS AJUSTADOS POR CAMBIO DE COMPORTAMIENTO
+======================================================================
+- finance: el cierre ahora exige declared_cash + declared_digital.
+- products: el remito ahora aplica CPP (28666.67 en vez de 29000.00).
+Tests nuevos en: sales, finance, suppliers, products, core, customers.
+
+======================================================================
+PENDIENTE / A REVISAR
+======================================================================
+- Probar con clics en el navegador la pantalla de cobro con varios medios
+  del POS (solo se verificó sintaxis JS y que las páginas carguen).
+- El "reporte al administrador" es página + PDF + WhatsApp + ActivityLog;
+  no hay envío por email (el proyecto no tiene configuración de correo).
+- Decidir si "Ventas Netas" debe ir sin IVA y si los ajustes forzosos deben
+  valuarse al costo en lugar del precio de venta.
+- Hacer commit cuando esté validado.

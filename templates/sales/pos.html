@@ -15,7 +15,12 @@
 {% endif %}
 {% if last_sale_id %}
     <script>
-        window.open("{% url 'sales:export_thermal_ticket' pk=last_sale_id %}", "_blank");
+        // SPEC-POS-08 §8.3: ticket térmico HTML con impresión automática
+        (function () {
+            let width = '80';
+            try { width = localStorage.getItem('pos_ticket_width') || '80'; } catch (e) { /* sin storage */ }
+            window.open("{% url 'sales:ticket_escpos' pk=last_sale_id %}?w=" + width, "_blank");
+        })();
     </script>
 {% endif %}
 <div class="row">
@@ -68,6 +73,7 @@
                 {% for customer in customers %}
                     <option value="{{ customer.id }}" 
                             data-balance="{{ customer.balance }}"
+                            data-price-list="{{ customer.price_list_id|default:'default' }}"
                             data-points="{{ customer.points }}"
                             {% if customer.id == default_customer.id %}selected{% endif %}>
                         {{ customer.full_name }} {% if customer.balance > 0 %}(Deuda: ${{ customer.balance }}){% endif %}
@@ -90,14 +96,24 @@
             </select>
         </div>
 
-        <!-- Método de Pago -->
+        <!-- Tipo de operación (SPEC-POS-08 §8.2) -->
         <div class="mb-3">
-            <label class="form-label small opacity-75 fw-bold">Método de Pago</label>
-            <select name="payment_method" id="payment-method" form="pos-form" class="form-select border-0 shadow-sm fw-bold bg-body-secondary">
-                {% for pm in payment_methods %}
-                    <option value="{{ pm.id }}">{{ pm.name }}</option>
-                {% endfor %}
-            </select>
+            <div class="btn-group w-100 shadow-sm" role="group">
+                <input type="radio" class="btn-check" name="sale_mode" id="mode-completed" value="COMPLETED" checked>
+                <label class="btn btn-outline-primary btn-sm" for="mode-completed"><i class="bi bi-bag-check me-1"></i>Venta</label>
+                <input type="radio" class="btn-check" name="sale_mode" id="mode-reserved" value="RESERVED">
+                <label class="btn btn-outline-warning btn-sm" for="mode-reserved"><i class="bi bi-bookmark me-1"></i>Pedido con seña</label>
+            </div>
+        </div>
+
+        <!-- Cobro: uno o varios medios de pago (SPEC-POS-08 §8.1) -->
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small opacity-75 fw-bold mb-0" id="payments-label">Cobro</label>
+                <button type="button" class="btn btn-sm btn-link p-0" id="add-payment"><i class="bi bi-plus-circle me-1"></i>Agregar medio</button>
+            </div>
+            <div id="payment-rows"></div>
+            <div id="payments-status" class="small mt-1"></div>
         </div>
 
         <ul class="list-group mb-3 shadow-sm border-0" id="cart-items">
@@ -148,9 +164,19 @@
             <input type="hidden" name="customer_id" id="form-customer-id">
             <input type="hidden" name="points_redeemed" id="form-points-redeemed">
             <input type="hidden" name="points_discount" id="form-points-discount">
-            <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow">
-                <i class="bi bi-check2-circle me-2"></i>CONFIRMAR VENTA
+            <input type="hidden" name="payment_method" id="form-payment-method">
+            <input type="hidden" name="payments_data" id="form-payments-data">
+            <input type="hidden" name="sale_status" id="form-sale-status" value="COMPLETED">
+            <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow" id="confirm-sale-btn">
+                <i class="bi bi-check2-circle me-2"></i><span id="confirm-sale-label">CONFIRMAR VENTA</span>
             </button>
+            <div class="d-flex justify-content-end align-items-center gap-2 mt-2 small opacity-75">
+                <label for="ticket-width" class="mb-0">Ticket</label>
+                <select id="ticket-width" class="form-select form-select-sm w-auto">
+                    <option value="80">80mm</option>
+                    <option value="58">58mm</option>
+                </select>
+            </div>
         </form>
     </div>
 </div>
@@ -170,7 +196,12 @@
                 <label class="form-label small fw-bold">Efectivo contado en caja</label>
                 <div class="input-group mb-3">
                     <span class="input-group-text border-0 bg-light">$</span>
-                    <input type="number" name="real_amount" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01">
+                    <input type="number" name="declared_cash" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01">
+                </div>
+                <label class="form-label small fw-bold">Comprobantes digitales (Transf./QR/Tarjeta)</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text border-0 bg-light">$</span>
+                    <input type="number" name="declared_digital" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01" value="0">
                 </div>
                 <input type="text" name="notes" class="form-control border-0 bg-light" placeholder="Observaciones (opcional)">
             </div>
@@ -264,6 +295,15 @@
         const alert = document.getElementById('balance-alert');
         
         document.getElementById('form-customer-id').value = this.value;
+
+        // SPEC-CRM-10 §10.1: el segmento del cliente define la lista de precios
+        const customerList = selected.dataset.priceList || 'default';
+        const hasList = Array.from(priceListSelect.options).some(o => o.value === customerList);
+        const targetList = hasList ? customerList : 'default';
+        if (priceListSelect.value !== targetList) {
+            priceListSelect.value = targetList;
+            priceListSelect.dispatchEvent(new Event('change'));
+        }
         
         if (balance > 0) alert.classList.remove('d-none');
         else alert.classList.add('d-none');
@@ -398,12 +438,142 @@
         const surcharge = parseFloat(document.getElementById('surcharge-input').value || 0);
         const total = subtotal_items - discount - pointsDiscount + surcharge;
 
-        document.getElementById('total-amount').innerText = Math.max(0, total).toFixed(2);
+        currentTotal = Math.max(0, Math.round(total * 100) / 100);
+        document.getElementById('total-amount').innerText = currentTotal.toFixed(2);
+        renderPayments();
         document.getElementById('cart-data').value = JSON.stringify(cart);
         
         document.getElementById('form-points-redeemed').value = document.getElementById('points-to-redeem').value || 0;
         document.getElementById('form-points-discount').value = pointsDiscount;
     }
+
+    // ---------- Cobro con múltiples medios / seña ----------
+    const paymentMethods = [{% for pm in payment_methods %}{ id: '{{ pm.id }}', name: '{{ pm.name|escapejs }}' }{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const paymentRowsEl = document.getElementById('payment-rows');
+    const paymentsStatus = document.getElementById('payments-status');
+    let currentTotal = 0;
+    let saleMode = 'COMPLETED';
+    let payments = [];
+
+    function newPayment(methodId) {
+        return { method_id: methodId || (paymentMethods[0] && paymentMethods[0].id), amount: 0, reference: '', manual: false };
+    }
+
+    function paymentsSum() {
+        return Math.round(payments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0) * 100) / 100;
+    }
+
+    function autofillPayments() {
+        // En una venta, el último medio sin editar completa el restante
+        if (saleMode !== 'COMPLETED' || !payments.length) return;
+        const last = payments[payments.length - 1];
+        if (last.manual) return;
+        const others = payments.slice(0, -1).reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+        last.amount = Math.max(0, Math.round((currentTotal - others) * 100) / 100);
+    }
+
+    function serializePayments() {
+        document.getElementById('form-payment-method').value = payments.length ? payments[0].method_id : '';
+        // Pago único: solo el método; el servidor cobra el total que calcule (promos incluidas)
+        const itemized = payments.length > 1 || saleMode === 'RESERVED';
+        document.getElementById('form-payments-data').value = itemized
+            ? JSON.stringify(payments.map(p => ({ method_id: p.method_id, amount: (parseFloat(p.amount) || 0).toFixed(2), reference: p.reference })))
+            : '';
+        document.getElementById('form-sale-status').value = saleMode;
+    }
+
+    function renderPayments() {
+        autofillPayments();
+        paymentRowsEl.innerHTML = '';
+        payments.forEach((p, i) => {
+            const row = document.createElement('div');
+            row.className = 'input-group input-group-sm mb-1 shadow-sm';
+            const select = document.createElement('select');
+            select.className = 'form-select border-0 bg-body-secondary fw-bold';
+            paymentMethods.forEach(m => select.add(new Option(m.name, m.id, false, String(m.id) === String(p.method_id))));
+            select.addEventListener('change', () => { p.method_id = select.value; serializePayments(); });
+            const amount = document.createElement('input');
+            amount.type = 'number'; amount.step = '0.01'; amount.min = '0';
+            amount.className = 'form-control border-0';
+            amount.value = (parseFloat(p.amount) || 0).toFixed(2);
+            amount.title = 'Monto';
+            amount.addEventListener('input', () => { p.amount = amount.value; p.manual = true; updatePaymentsStatus(); serializePayments(); });
+            amount.addEventListener('change', () => renderPayments());
+            const ref = document.createElement('input');
+            ref.type = 'text'; ref.placeholder = 'N° comp.'; ref.value = p.reference;
+            ref.className = 'form-control border-0';
+            ref.style.maxWidth = '6rem';
+            ref.addEventListener('input', () => { p.reference = ref.value; serializePayments(); });
+            row.append(select, amount, ref);
+            if (payments.length > 1) {
+                const del = document.createElement('button');
+                del.type = 'button'; del.className = 'btn btn-outline-danger border-0';
+                del.innerHTML = '<i class="bi bi-x"></i>';
+                del.addEventListener('click', () => { payments.splice(i, 1); payments.forEach(x => x.manual = false); renderPayments(); });
+                row.append(del);
+            }
+            paymentRowsEl.append(row);
+        });
+        updatePaymentsStatus();
+        serializePayments();
+    }
+
+    function updatePaymentsStatus() {
+        const paid = paymentsSum();
+        const diff = Math.round((currentTotal - paid) * 100) / 100;
+        if (saleMode === 'RESERVED') {
+            paymentsStatus.className = 'small mt-1 text-warning-emphasis';
+            paymentsStatus.textContent = `Seña: $${paid.toFixed(2)} — Saldo a cobrar al entregar: $${Math.max(0, diff).toFixed(2)}`;
+        } else if (payments.length > 1 && diff !== 0) {
+            paymentsStatus.className = 'small mt-1 text-danger fw-bold';
+            paymentsStatus.textContent = diff > 0 ? `Falta asignar $${diff.toFixed(2)}` : `Excede el total en $${Math.abs(diff).toFixed(2)}`;
+        } else if (payments.length > 1) {
+            paymentsStatus.className = 'small mt-1 text-success';
+            paymentsStatus.textContent = 'Los pagos cubren el total.';
+        } else {
+            paymentsStatus.textContent = '';
+        }
+    }
+
+    document.getElementById('add-payment').addEventListener('click', () => {
+        payments.forEach(p => p.manual = true);
+        const used = new Set(payments.map(p => String(p.method_id)));
+        const next = paymentMethods.find(m => !used.has(String(m.id)));
+        payments.push(newPayment(next && next.id));
+        renderPayments();
+    });
+
+    document.querySelectorAll('input[name="sale_mode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            saleMode = radio.value;
+            document.getElementById('payments-label').textContent = saleMode === 'RESERVED' ? 'Seña' : 'Cobro';
+            document.getElementById('confirm-sale-label').textContent = saleMode === 'RESERVED' ? 'REGISTRAR PEDIDO CON SEÑA' : 'CONFIRMAR VENTA';
+            payments = [newPayment(payments.length ? payments[0].method_id : null)];
+            if (saleMode === 'RESERVED') payments[0].manual = true;
+            renderPayments();
+        });
+    });
+
+    document.getElementById('pos-form').addEventListener('submit', (event) => {
+        serializePayments();
+        if (saleMode === 'COMPLETED' && payments.length > 1 && paymentsSum() !== currentTotal) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            alert('La suma de los pagos debe ser igual al total de la venta.');
+        } else if (saleMode === 'RESERVED' && paymentsSum() > currentTotal) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            alert('La seña no puede superar el total del pedido.');
+        }
+    });
+
+    const ticketWidth = document.getElementById('ticket-width');
+    try { ticketWidth.value = localStorage.getItem('pos_ticket_width') || '80'; } catch (e) { /* sin storage */ }
+    ticketWidth.addEventListener('change', () => {
+        try { localStorage.setItem('pos_ticket_width', ticketWidth.value); } catch (e) { /* sin storage */ }
+    });
+
+    payments = [newPayment()];
 
     document.getElementById('discount-input').addEventListener('input', updateCart);
     document.getElementById('surcharge-input').addEventListener('input', updateCart);
@@ -424,6 +594,8 @@
     // Usado por pos-offline.js tras guardar una venta localmente
     window.posResetSale = function () {
         cart = [];
+        payments = [newPayment(payments.length ? payments[0].method_id : null)];
+        if (saleMode === 'RESERVED') payments[0].manual = true;
         document.getElementById('discount-input').value = 0;
         document.getElementById('surcharge-input').value = 0;
         resetPoints();
@@ -432,6 +604,7 @@
     // Inicializar
     document.getElementById('form-customer-id').value = customerSelect.value;
     document.getElementById('form-price-list').value = priceListSelect.value;
+    renderPayments();
 </script>
 <script>
     window.POS_OFFLINE_CONFIG = {

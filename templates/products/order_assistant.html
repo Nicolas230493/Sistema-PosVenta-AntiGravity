@@ -7,62 +7,75 @@
     <div class="col-12">
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-4">
                     <div>
-                        <h4 class="fw-bold mb-1">Lista de Faltantes</h4>
-                        <p class="opacity-75 small mb-0">Productos con stock por debajo del mínimo establecido.</p>
+                        <h4 class="fw-bold mb-1">Sugerencia de Compra Inteligente</h4>
+                        <p class="opacity-75 small mb-0">Velocidad de venta de los últimos 14 días (V14) × días de cobertura − stock actual.</p>
                     </div>
-                    <div class="d-flex">
-                        <form method="post" class="me-2">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <form method="get" class="d-flex align-items-center gap-2">
+                            <label class="small fw-bold text-nowrap" for="dias">Cobertura (días)</label>
+                            <input type="number" min="1" max="90" name="dias" id="dias" value="{{ coverage_days }}" class="form-control form-control-sm" style="width: 5rem;">
+                            <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill">Recalcular</button>
+                        </form>
+                        <form method="post">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
+                            <input type="hidden" name="dias" value="{{ coverage_days }}">
+                            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" {% if not groups %}disabled{% endif %}>
                                 <i class="bi bi-magic me-2"></i>GENERAR ÓRDENES
                             </button>
                         </form>
+                        {% if whatsapp_text %}
                         <a href="https://wa.me/?text={{ whatsapp_text|urlencode }}" target="_blank" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm">
                             <i class="bi bi-whatsapp me-2"></i>PEDIDO GENERAL
                         </a>
+                        {% endif %}
                     </div>
                 </div>
 
+                {% for group in groups %}
+                <h6 class="fw-bold mt-4 mb-2">
+                    <i class="bi bi-truck me-1"></i>{{ group.supplier.name|default:"Sin Proveedor (no genera orden)" }}
+                </h6>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle">
                         <thead class="bg-body-tertiary">
                             <tr>
                                 <th class="ps-4">Producto</th>
-                                <th>Proveedor</th>
+                                <th class="text-center">Venta diaria (V14)</th>
                                 <th class="text-center">Stock Actual</th>
-                                <th class="text-center">Stock Mínimo</th>
+                                <th class="text-center">Sugerido</th>
                                 <th class="text-end pe-4">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for p in low_stock_products %}
+                            {% for item in group.items %}
                             <tr>
-                                <td class="ps-4 fw-bold">{{ p.name }}</td>
-                                <td>{{ p.supplier.name|default:"Sin Proveedor" }}</td>
+                                <td class="ps-4 fw-bold">{{ item.product.name }}</td>
+                                <td class="text-center">{{ item.velocity|floatformat:"-3" }} {{ item.product.unit }}/día</td>
                                 <td class="text-center">
-                                    <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-3">{{ p.stock|floatformat:"-3" }}</span>
+                                    <span class="badge {% if item.product.stock <= 0 %}bg-danger{% else %}bg-warning{% endif %} bg-opacity-10 {% if item.product.stock <= 0 %}text-danger{% else %}text-warning-emphasis{% endif %} rounded-pill px-3">{{ item.product.stock|floatformat:"-3" }}</span>
                                 </td>
-                                <td class="text-center opacity-75 small">{{ p.min_stock|floatformat:"-3" }}</td>
+                                <td class="text-center fw-bold text-primary">{{ item.suggested }} {{ item.product.unit }}</td>
                                 <td class="text-end pe-4">
-                                    <a href="https://wa.me/{{ p.supplier.phone|default:'' }}?text=Hola%20{{ p.supplier.name }},%20necesito%20pedido%20de:%20{{ p.name }}%20(Stock%20actual:%20{{ p.stock }})" 
+                                    {% if group.supplier %}
+                                    <a href="https://wa.me/{{ group.supplier.phone|default:'' }}?text={{ 'Hola, necesito pedido de: '|urlencode }}{{ item.product.name|urlencode }}%20x{{ item.suggested }}"
                                        target="_blank" class="btn btn-outline-success btn-sm rounded-pill px-3">
                                         <i class="bi bi-whatsapp me-1"></i> Pedir
                                     </a>
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="5" class="text-center py-5">
-                                    <i class="bi bi-check-all fs-1 text-success mb-3"></i>
-                                    <p class="opacity-75">¡Todo al día! No hay productos con stock bajo.</p>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                {% empty %}
+                <div class="text-center py-5">
+                    <i class="bi bi-check-all fs-1 text-success mb-3"></i>
+                    <p class="opacity-75">¡Todo al día! El stock cubre la venta proyectada de {{ coverage_days }} días.</p>
+                </div>
+                {% endfor %}
             </div>
         </div>
     </div>

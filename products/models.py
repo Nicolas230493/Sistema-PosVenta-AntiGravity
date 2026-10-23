@@ -18,19 +18,23 @@ class Product(models.Model):
     UNIT_CHOICES = [
         ('unidad', 'Unidad'),
         ('kg', 'Kilogramo'),
-        ('lt', 'Litro'),
+        ('litro', 'Litro'),
+        ('lt', 'Litro (lt)'),
         ('m', 'Metro'),
         ('caja', 'Caja'),
         ('paquete', 'Paquete'),
     ]
-    sku = models.CharField(max_length=50, unique=True, default='000000', verbose_name="SKU Interno")
-    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True, verbose_name="Código de Barras")
+    DISCRETE_UNITS = ('unidad', 'caja', 'paquete')
+    FRACTIONAL_UNITS = ('kg', 'litro', 'lt', 'm')
+
+    sku = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="SKU Interno")
+    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True, verbose_name="Código de Barras")
     name = models.CharField(max_length=200, verbose_name="Nombre")
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='unidad', verbose_name="Unidad")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
     description = models.TextField(verbose_name="Descripción", blank=True, null=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Precio Venta")
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Precio Costo")
+    price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Precio Venta")
+    cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Precio Costo")
     stock = models.DecimalField(max_digits=10, decimal_places=3, default=0, validators=[MinValueValidator(0)], verbose_name="Stock")
     min_stock = models.DecimalField(max_digits=10, decimal_places=3, default=5, validators=[MinValueValidator(0)], verbose_name="Stock Mínimo")
     expiry_date = models.DateField(null=True, blank=True, verbose_name="Fecha de Vencimiento")
@@ -39,6 +43,30 @@ class Product(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=21.00, verbose_name="Tasa de IVA (%)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_discrete(self):
+        return self.unit in self.DISCRETE_UNITS
+
+    @property
+    def is_fractional(self):
+        return self.unit in self.FRACTIONAL_UNITS
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+        if self.is_discrete:
+            if self.stock is not None and (self.stock % Decimal('1')) != Decimal('0'):
+                raise ValidationError({'stock': f"Las unidades discretas ({self.get_unit_display()}) no admiten decimales en el stock."})
+            if self.min_stock is not None and (self.min_stock % Decimal('1')) != Decimal('0'):
+                raise ValidationError({'min_stock': f"Las unidades discretas ({self.get_unit_display()}) no admiten decimales en el stock mínimo."})
+
+    def save(self, *args, **kwargs):
+        if self.sku == '':
+            self.sku = None
+        if self.barcode == '':
+            self.barcode = None
+        super().save(*args, **kwargs)
 
     def is_low_stock(self):
         return self.stock <= self.min_stock
@@ -71,20 +99,44 @@ from django.contrib.auth.models import User
 MOVEMENT_TYPES = [
     ('IN', 'Entrada'),
     ('OUT', 'Salida'),
-    ('ADJ', 'Ajuste'),
+    ('ADJ', 'Ajuste Manual'),
     ('AUTO_ADJUST_IN', 'Ajuste Automático por Venta'),
+    ('PURCHASE_IN', 'Ingreso por Compra/Reposición'),
+    ('SALE_CANCEL_IN', 'Reversión por Anulación'),
+]
+
+ADJUSTMENT_REASONS = [
+    ('merma', 'Merma'),
+    ('desposte', 'Desposte'),
+    ('vencimiento', 'Vencimiento'),
+    ('conteo_fisico', 'Conteo Físico'),
+    ('rotura', 'Rotura'),
+    ('otro', 'Otro'),
 ]
 
 class InventoryMovement(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='movements')
     quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Cantidad")
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Costo")
-    sale_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Venta")
+    cost_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Costo")
+    sale_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Nuevo Precio Venta")
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES, verbose_name="Tipo")
     reference = models.CharField(max_length=100, verbose_name="Referencia", help_text="Ej: Venta #123, Compra Factura X, Ajuste")
     reason = models.CharField(max_length=255, blank=True, default='', verbose_name="Motivo")
     date = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    def __init__(self, *args, **kwargs):
+        if 'type' in kwargs and 'movement_type' not in kwargs:
+            kwargs['movement_type'] = kwargs.pop('type')
+        super().__init__(*args, **kwargs)
+
+    @property
+    def type(self):
+        return self.movement_type
+
+    @type.setter
+    def type(self, value):
+        self.movement_type = value
 
     def __str__(self):
         return f"{self.movement_type} - {self.product.name} ({self.quantity})"
@@ -103,11 +155,18 @@ LOSS_REASONS = [
 
 class StockLoss(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='losses')
-    quantity = models.PositiveIntegerField(verbose_name="Cantidad")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, validators=[MinValueValidator(0)], verbose_name="Cantidad")
+    # Costo congelado al registrar la baja (valuación de mermas en la Ganancia Neta)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Costo Unitario")
     reason = models.CharField(max_length=3, choices=LOSS_REASONS, verbose_name="Motivo")
     date = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True, null=True, verbose_name="Notas adicionales")
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    def save(self, *args, **kwargs):
+        if self.unit_cost is None:
+            self.unit_cost = self.product.cost_price
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Baja: {self.product.name} - {self.quantity} ({self.get_reason_display()})"
@@ -117,9 +176,15 @@ class StockLoss(models.Model):
         verbose_name_plural = "Bajas de Stock"
 
 class PriceLog(models.Model):
+    PRICE_TYPES = [
+        ('SALE', 'Precio de Venta'),
+        ('COST', 'Precio de Costo'),
+    ]
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_logs')
     old_price = models.DecimalField(max_digits=10, decimal_places=2)
     new_price = models.DecimalField(max_digits=10, decimal_places=2)
+    price_type = models.CharField(max_length=4, choices=PRICE_TYPES, default='SALE', verbose_name="Tipo de Precio")
+    reason = models.CharField(max_length=255, blank=True, default='', verbose_name="Motivo")
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     date = models.DateTimeField(auto_now_add=True)
 

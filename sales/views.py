@@ -4,12 +4,15 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse, FileResponse, JsonResponse
 from django.views.decorators.http import require_POST
-from products.models import Product, PriceList, ProductPrice
-from customers.models import Customer
+from products.models import Product, PriceList, ProductPrice, InventoryMovement
+from customers.models import Customer, CurrentAccount
 from finance.models import CashSession, PaymentMethod
 from core.decorators import manager_required
 from .models import Sale, SaleReturn, SaleReturnDetail, Promotion
-from .services import SaleError, create_sale, DEFAULT_CUSTOMER_DNI
+from .services import (
+    SaleError, create_sale, DEFAULT_CUSTOMER_DNI, cancel_sale, complete_reservation,
+    sale_current_account_amount,
+)
 from django.conf import settings
 from django.utils import timezone
 
@@ -54,6 +57,8 @@ def pos_view(request):
                 cart=request.POST.get('cart_data'),
                 customer_id=request.POST.get('customer_id'),
                 payment_method_id=request.POST.get('payment_method'),
+                payments=request.POST.get('payments_data'),
+                status=request.POST.get('sale_status') or Sale.STATUS_COMPLETED,
                 price_list_id=request.POST.get('price_list'),
                 discount_amount=request.POST.get('discount_amount'),
                 surcharge_amount=request.POST.get('surcharge_amount'),
@@ -61,8 +66,11 @@ def pos_view(request):
                 client_uuid=request.POST.get('client_uuid'),
             )
             request.session['last_sale_id'] = sale.id
-            if created:
-                messages.success(request, f"Venta #{sale.id} registrada ({sale.payment_method.name}).")
+            if created and sale.status == Sale.STATUS_RESERVED:
+                messages.success(request, f"Pedido #{sale.id} registrado. Seña: ${sale.amount_paid} — Saldo pendiente: ${sale.balance_due}.")
+            elif created:
+                methods = ' + '.join(p.payment_method.name for p in sale.payments.select_related('payment_method'))
+                messages.success(request, f"Venta #{sale.id} registrada ({methods or 'sin cobro'}).")
             else:
                 messages.info(request, f"Venta #{sale.id} ya estaba registrada.")
             if is_ajax:
@@ -77,7 +85,7 @@ def pos_view(request):
         return render(request, 'sales/pos_no_session.html')
 
     products = Product.objects.all().order_by('name')
-    customers = Customer.objects.all()
+    customers = Customer.objects.select_related('price_list')
     payment_methods = PaymentMethod.objects.filter(active=True)
     price_lists = PriceList.objects.filter(active=True)
     default_customer = Customer.objects.filter(dni_cuit=DEFAULT_CUSTOMER_DNI).first()
@@ -176,7 +184,9 @@ def sync_sales(request):
                 user=request.user,
                 cart=entry.get('cart'),
                 customer_id=entry.get('customer_id'),
-                payment_method_id=entry.get('payment_method'),
+                payment_method_id=entry.get('payment_method_id') or entry.get('payment_method'),
+                payments=entry.get('payments'),
+                status=entry.get('status') or Sale.STATUS_COMPLETED,
                 price_list_id=entry.get('price_list'),
                 discount_amount=entry.get('discount_amount'),
                 surcharge_amount=entry.get('surcharge_amount'),
@@ -204,8 +214,56 @@ def service_worker(request):
     return response
 
 @login_required
+def ticket_escpos(request, pk):
+    """SPEC-POS-08 §8.3: ticket HTML para impresora térmica 58/80mm con impresión automática."""
+    sale = get_object_or_404(
+        Sale.objects.select_related('customer', 'user'), pk=pk
+    )
+    width = '58' if request.GET.get('w') == '58' else '80'
+    return render(request, 'sales/ticket_escpos.html', {
+        'sale': sale,
+        'details': sale.details.select_related('product'),
+        'payments': sale.payments.select_related('payment_method'),
+        'width': width,
+        'autoprint': request.GET.get('print', '1') != '0',
+    })
+
+
+@login_required
+def reservation_list(request):
+    """SPEC-POS-08 §8.2: pedidos / apartados con seña pendientes de entrega."""
+    reservations = Sale.objects.filter(status=Sale.STATUS_RESERVED).select_related(
+        'customer', 'user'
+    ).prefetch_related('payments__payment_method', 'details__product').order_by('fecha_hora')
+    return render(request, 'sales/reservation_list.html', {
+        'reservations': reservations,
+        'payment_methods': PaymentMethod.objects.filter(active=True),
+    })
+
+
+@login_required
+@permission_required('sales.add_sale', raise_exception=True)
+@require_POST
+def reservation_complete(request, pk):
+    sale = get_object_or_404(Sale, pk=pk)
+    try:
+        payments = request.POST.get('payments_data')
+        if not payments:
+            payments = [{
+                'method_id': request.POST.get('payment_method'),
+                'amount': request.POST.get('amount'),
+                'reference': request.POST.get('reference', ''),
+            }]
+        complete_reservation(sale=sale, user=request.user, payments=payments)
+        messages.success(request, f"Pedido #{sale.id} cobrado y entregado.")
+    except SaleError as e:
+        messages.error(request, f"No se pudo completar el pedido: {e}")
+    return redirect('sales:reservation_list')
+
+
+@login_required
 def sale_list(request):
-    sales = Sale.objects.select_related('user', 'customer', 'payment_method', 'cash_session').order_by('-fecha_hora')
+    sales = Sale.objects.select_related('user', 'customer', 'payment_method', 'cash_session').prefetch_related('payments__payment_method').order_by('-fecha_hora')
     return render(request, 'sales/sale_list.html', {'sales': sales})
 
 @login_required
@@ -237,6 +295,13 @@ from core.models import ActivityLog
 @manager_required
 def sale_return(request, pk):
     sale = get_object_or_404(Sale, pk=pk)
+    if sale.is_cancelled:
+        messages.error(request, "No se pueden realizar devoluciones de una venta anulada.")
+        return redirect('sales:sale_list')
+    if sale.status == Sale.STATUS_RESERVED:
+        messages.error(request, "Un pedido con seña pendiente no admite devoluciones: anúlelo o complételo primero.")
+        return redirect('sales:sale_list')
+
     if request.method == 'POST':
         try:
             with transaction.atomic():
@@ -269,6 +334,19 @@ def sale_return(request, pk):
                             quantity=qty_to_return,
                             price_at_return=detail.price
                         )
+                        # SPEC-AUD-STOCK-06 §6.2.7: Reversión atómica de stock y movimiento SALE_CANCEL_IN
+                        if detail.product:
+                            prod = Product.objects.select_for_update().get(pk=detail.product_id)
+                            prod.stock += qty_to_return
+                            prod.save()
+                            InventoryMovement.objects.create(
+                                product=prod,
+                                quantity=qty_to_return,
+                                movement_type='SALE_CANCEL_IN',
+                                reference=f"Devolución Venta #{sale.id}",
+                                reason=f"Devolución parcial/total #{sale_return.id}: {sale_return.reason or 'Sin motivo'}",
+                                user=request.user
+                            )
                         return_details_text.append(f"{detail.product.name} ({qty_to_return})")
                 
                 if total_return_amount == 0:
@@ -276,6 +354,20 @@ def sale_return(request, pk):
                 
                 sale_return.total_amount = total_return_amount
                 sale_return.save()
+
+                # Reversión de Cuenta Corriente por la parte fiada de la venta
+                cc_amount = min(total_return_amount, sale_current_account_amount(sale))
+                if sale.customer and cc_amount > 0:
+                    customer = Customer.objects.select_for_update().get(pk=sale.customer_id)
+                    customer.balance -= cc_amount
+                    customer.save(update_fields=['balance'])
+                    CurrentAccount.objects.create(
+                        customer=customer,
+                        amount=cc_amount,
+                        entry_type='CREDIT',
+                        reference=f"Devolución #{sale_return.id}",
+                        balance_after=customer.balance,
+                    )
                 
                 ActivityLog.objects.create(
                     user=request.user,
@@ -284,10 +376,28 @@ def sale_return(request, pk):
                     details=", ".join(return_details_text)
                 )
                 
-                messages.success(request, f"Devolución #{sale_return.id} procesada correctamente.")
+                messages.success(request, f"Devolución #{sale_return.id} procesada correctamente. Stock reincorporado.")
                 return redirect('sales:sale_list')
                 
         except Exception as e:
             messages.error(request, f"Error al procesar devolución: {str(e)}")
             
     return render(request, 'sales/sale_return.html', {'sale': sale})
+
+
+@manager_required
+def sale_cancel(request, pk):
+    """SPEC-AUD-STOCK-06 §6.2.7: Anulación de venta con reversión de stock y SALE_CANCEL_IN."""
+    sale = get_object_or_404(Sale, pk=pk)
+    if request.method == 'POST':
+        reason = request.POST.get('reason')
+        if not reason or not reason.strip():
+            messages.error(request, "Debe ingresar el motivo de la anulación.")
+            return redirect('sales:sale_list')
+        try:
+            cancel_sale(sale=sale, user=request.user, reason=reason.strip())
+            messages.success(request, f"Venta #{sale.id} anulada con éxito. Stock reincorporado íntegramente.")
+        except SaleError as e:
+            messages.error(request, f"Error al anular la venta: {e}")
+        return redirect('sales:sale_list')
+    return render(request, 'sales/sale_confirm_cancel.html', {'sale': sale})

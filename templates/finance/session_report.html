@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Reporte de Cierre — Caja #{{ session.id }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+        <h4 class="fw-bold mb-0">Caja #{{ session.id }} — {{ session.user.username|default:"N/A" }}</h4>
+        <div class="small opacity-75">
+            {{ session.start_date|date:"d/m/Y H:i" }} → {% if session.end_date %}{{ session.end_date|date:"d/m/Y H:i" }}{% else %}<span class="badge bg-success">ABIERTA</span>{% endif %}
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        {% if not session.is_open %}
+        <a href="{% url 'finance:whatsapp_report' pk=session.pk %}" target="_blank" class="btn btn-outline-success rounded-pill btn-sm"><i class="bi bi-whatsapp me-1"></i>Enviar al administrador</a>
+        {% endif %}
+        <a href="{% url 'finance:export_cash_report' pk=session.pk %}" target="_blank" class="btn btn-outline-secondary rounded-pill btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
+    </div>
+</div>
+
+{% if session.is_open %}
+<div class="alert alert-info border-0">La caja sigue abierta: los valores son parciales y la diferencia se calcula al cerrar.</div>
+{% else %}
+<div class="card border-0 shadow-sm rounded-4 mb-4 {% if session.difference is None %}{% elif session.difference == 0 %}bg-success-subtle{% elif session.difference > 0 %}bg-info-subtle{% else %}bg-danger-subtle{% endif %}">
+    <div class="card-body p-4 text-center">
+        <div class="small fw-bold text-uppercase opacity-75">Resultado del arqueo ciego</div>
+        <div class="display-6 fw-bold">{{ difference_label }}</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Efectivo</h6>
+                <div class="d-flex justify-content-between small mb-1"><span>Monto inicial</span><span>${{ session.initial_amount }}</span></div>
+                <div class="d-flex justify-content-between small mb-1"><span>Ingresos en efectivo</span><span>${{ session.total_sales_cash }}</span></div>
+                <div class="d-flex justify-content-between small mb-1"><span>Egresos</span><span>-${{ session.total_expenses }}</span></div>
+                <hr class="my-2">
+                <div class="d-flex justify-content-between"><span>Esperado</span><span class="fw-bold">${{ session.expected_cash|default:session.expected_final_amount }}</span></div>
+                <div class="d-flex justify-content-between"><span>Declarado</span><span class="fw-bold">{% if session.declared_cash is not None %}${{ session.declared_cash }}{% else %}—{% endif %}</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Cobros por medio de pago</h6>
+                {% for row in payment_summary %}
+                <div class="d-flex justify-content-between small mb-1"><span>{{ row.payment_method__name|default:"Sin especificar" }}</span><span>${{ row.total }}</span></div>
+                {% empty %}
+                <div class="small opacity-75">Sin cobros en este turno.</div>
+                {% endfor %}
+                <hr class="my-2">
+                <div class="d-flex justify-content-between"><span>Digital esperado</span><span class="fw-bold">${{ session.expected_digital|default:session.total_sales_digital }}</span></div>
+                <div class="d-flex justify-content-between"><span>Digital declarado</span><span class="fw-bold">{% if session.declared_digital is not None %}${{ session.declared_digital }}{% else %}—{% endif %}</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SPEC-FIN-06 §6.2: Panel de Ajustes Forzosos -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-header bg-transparent border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-diamond text-warning me-2"></i>Ajustes Forzosos del turno</h5>
+        <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">{{ adjustments|length }} movimiento{{ adjustments|length|pluralize }}</span>
+    </div>
+    <div class="card-body px-4">
+        <p class="small opacity-75">Ventas en descubierto: mercadería vendida sin stock cargado (desposte no registrado). Se generaron movimientos <code>AUTO_ADJUST_IN</code> automáticamente.</p>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th>Hora</th>
+                        <th>Producto</th>
+                        <th>Venta</th>
+                        <th class="text-end">Cantidad ajustada</th>
+                        <th class="text-end">Precio unit.</th>
+                        <th class="text-end">Equivalente $</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in adjustments %}
+                    <tr>
+                        <td class="small">{{ row.date|date:"H:i" }}</td>
+                        <td class="fw-bold">{{ row.product }}</td>
+                        <td>#{{ row.sale_id }}</td>
+                        <td class="text-end">{{ row.quantity|floatformat:"-3" }} {{ row.unit }}</td>
+                        <td class="text-end">${{ row.unit_price }}</td>
+                        <td class="text-end fw-bold">${{ row.amount }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center py-4 opacity-50">Sin ajustes forzosos en este turno.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if adjustments %}
+                <tfoot>
+                    <tr><th colspan="5" class="text-end">Total</th><th class="text-end">${{ adjustments_total }}</th></tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Egresos</h6>
+                {% for e in expenses %}
+                <div class="d-flex justify-content-between small mb-1"><span>{{ e.description }} <span class="opacity-50">({{ e.get_kind_display }})</span></span><span>-${{ e.amount }}</span></div>
+                {% empty %}
+                <div class="small opacity-75">Sin egresos.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3">Mercadería vendida / auto-ajustada</h6>
+                {% for row in stock_summary %}
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>{{ row.product }}</span>
+                    <span>{{ row.sold|floatformat:"-3" }} {{ row.unit }}{% if row.auto_adjusted %} <span class="badge bg-warning-subtle text-warning-emphasis">+{{ row.auto_adjusted|floatformat:"-3" }}</span>{% endif %}</span>
+                </div>
+                {% empty %}
+                <div class="small opacity-75">Sin ventas.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if session.notes %}
+<div class="card border-0 shadow-sm rounded-4 mt-4"><div class="card-body p-4"><h6 class="fw-bold">Observaciones</h6><p class="mb-0">{{ session.notes }}</p></div></div>
+{% endif %}
+{% endblock %}

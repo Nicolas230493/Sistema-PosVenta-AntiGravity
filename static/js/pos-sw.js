@@ -4,7 +4,7 @@
  * - Catálogo JSON: network-first.
  * - Estilos, scripts y fuentes: stale-while-revalidate.
  */
-const CACHE_NAME = 'impulso-pos-v1';
+const CACHE_NAME = 'impulso-pos-v2';
 const SCOPE_PATH = new URL(self.registration.scope).pathname;  // p. ej. /pos/
 const POS_PAGE_KEY = SCOPE_PATH;
 

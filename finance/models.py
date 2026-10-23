@@ -26,6 +26,12 @@ class CashSession(models.Model):
     real_final_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], verbose_name="Final Real")
     is_open = models.BooleanField(default=True, verbose_name="¿Caja Abierta?")
     notes = models.TextField(null=True, blank=True, verbose_name="Observaciones")
+    # SPEC-FIN-06 §6.1: arqueo ciego. Lo declarado lo informa el cajero; lo esperado se calcula en el servidor al cerrar.
+    declared_cash = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], verbose_name="Efectivo Declarado")
+    declared_digital = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], verbose_name="Digital Declarado")
+    expected_cash = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Efectivo Esperado")
+    expected_digital = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Digital Esperado")
+    difference = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Diferencia (Sobrante/Faltante)")
 
     @classmethod
     def get_active(cls):
@@ -48,9 +54,17 @@ class CashSession(models.Model):
         ]
 
 class CashExpense(models.Model):
+    KIND_EXPENSE = 'EXPENSE'
+    KIND_SUPPLIER_PAYMENT = 'SUPPLIER_PAYMENT'
+    KINDS = [
+        (KIND_EXPENSE, 'Gasto de Caja'),
+        (KIND_SUPPLIER_PAYMENT, 'Pago a Proveedor'),
+    ]
     session = models.ForeignKey(CashSession, related_name='expenses', on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Monto")
     description = models.CharField(max_length=255, verbose_name="Concepto")
+    # Los pagos a proveedores salen de la caja pero no son gasto: el costo ya está en el CMV
+    kind = models.CharField(max_length=20, choices=KINDS, default=KIND_EXPENSE, verbose_name="Tipo")
     date = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
