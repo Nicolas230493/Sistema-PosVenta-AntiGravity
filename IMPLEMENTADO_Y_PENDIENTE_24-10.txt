@@ -12,11 +12,11 @@ Fecha: 24/10/2026
   La rama de trabajo codigo-barras se borró al pasar todo a main.
 - Tests: 160 OK.
   `manage.py check` y `makemigrations --check` sin problemas.
-- Migraciones NUEVAS (no aplicadas a db.sqlite3 local):
+- Migraciones NUEVAS (aplicadas a db.sqlite3 el 24/10, integridad OK):
     core/migrations/0006_configuracionsistema_balanza_digitos_plu_and_more.py
     products/migrations/0021_product_plu.py
     products/migrations/0022_product_active.py
-  db.sqlite3 está igual que antes (se trabajó sobre una copia para la demo).
+  Antes de migrar se guardó una copia de db.sqlite3 (fuera del repo).
 - Plugins de Claude Code instalados: frontend-design y playground.
 
 ======================================================================
@@ -153,7 +153,7 @@ Para dejarlo andando en producción
         Encargado (deben verse bloqueados) y con el dueño.
 - [x] Pasar todo a main y subirlo a GitHub (24/10).
 - [ ] Verificar el despliegue en Render: build.sh corre `migrate` con las
-      3 migraciones nuevas. En local, copiar db.sqlite3 antes de migrar.
+      3 migraciones nuevas (en local ya están aplicadas).
 - [ ] Decidir: el PRECIO INICIAL al crear un producto ¿lo puede poner
       cualquier rol con acceso (como ahora) o solo el dueño?
 
