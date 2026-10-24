@@ -126,7 +126,7 @@
             total += subtotal;
             tbody.innerHTML += `
                 <tr>
-                    <td>${item.name}</td>
+                    <td>${escapeHtml(item.name)}</td>
                     <td>${item.qty}</td>
                     <td>$${item.cost.toFixed(2)}</td>
                     <td>$${subtotal.toFixed(2)}</td>

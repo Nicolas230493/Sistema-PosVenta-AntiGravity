@@ -80,12 +80,13 @@ def cash_dashboard(request):
 
     # Datos de Rentabilidad (Utilidad Bruta) del día actual para todos los usuarios (Vista Gerencial)
     today = timezone.localdate()
-    sales_today = Sale.objects.filter(fecha_hora__date=today)
+    # Solo ventas concretadas (sin anuladas ni pedidos con seña pendientes)
+    sales_today = Sale.objects.filter(fecha_hora__date=today, status=Sale.STATUS_COMPLETED)
 
     total_revenue = sales_today.aggregate(total=models.Sum('total_amount'))['total'] or Decimal('0.00')
 
     # Costo congelado en SaleDetail.unit_cost al momento de la venta
-    total_cost = SaleDetail.objects.filter(sale__fecha_hora__date=today).aggregate(
+    total_cost = SaleDetail.objects.filter(sale__in=sales_today).aggregate(
         total=models.Sum(models.F('quantity') * models.F('unit_cost'), output_field=models.DecimalField())
     )['total'] or Decimal('0.00')
 
@@ -280,7 +281,10 @@ def fiscal_reports(request):
         month, year = today.month, today.year
     
     # IVA Ventas
-    sales = Sale.objects.filter(fecha_hora__month=month, fecha_hora__year=year).order_by('fecha_hora')
+    # IVA Ventas: solo ventas concretadas; las anuladas y los pedidos con seña pendientes no se declaran
+    sales = Sale.objects.filter(
+        fecha_hora__month=month, fecha_hora__year=year, status=Sale.STATUS_COMPLETED
+    ).order_by('fecha_hora')
     
     # IVA Compras
     purchases = Purchase.objects.filter(date__month=month, date__year=year).order_by('date')

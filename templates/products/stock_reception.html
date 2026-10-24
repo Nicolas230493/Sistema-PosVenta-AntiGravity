@@ -1,0 +1,348 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block page_title %}Recepción por escáner{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-7">
+                        <label class="form-label fw-bold small" for="rx-supplier">Proveedor</label>
+                        <select id="rx-supplier" class="form-select" required>
+                            <option value="">Elegí el proveedor…</option>
+                            {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold small" for="rx-invoice">N° de factura o remito</label>
+                        <input id="rx-invoice" type="text" class="form-control" placeholder="Opcional">
+                    </div>
+                </div>
+
+                <label class="form-label fw-bold small" for="rx-code">Código de barras, SKU o etiqueta de balanza</label>
+                <div class="input-group input-group-lg mb-2">
+                    <span class="input-group-text bg-white"><i class="bi bi-upc-scan"></i></span>
+                    <input id="rx-code" type="text" class="form-control" placeholder="Escaneá con el lector o escribí el código y Enter" autocomplete="off" autofocus>
+                    <button type="button" class="btn btn-outline-primary" id="rx-camera"><i class="bi bi-camera me-1"></i>Cámara</button>
+                </div>
+                <div id="rx-feedback" class="small mb-3" aria-live="polite"></div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Producto</th>
+                                <th scope="col" style="width: 140px">Cantidad</th>
+                                <th scope="col" style="width: 150px">Costo unitario ($)</th>
+                                <th scope="col" class="text-end">Subtotal</th>
+                                <th scope="col"><span class="visually-hidden">Quitar</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="rx-rows"></tbody>
+                    </table>
+                </div>
+                <p id="rx-empty" class="text-center text-body-secondary py-4 mb-0">Todavía no escaneaste nada.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm rounded-4 sticky-lg-top" style="top: 1rem">
+            <div class="card-body p-4 d-flex flex-column gap-3">
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <span class="text-body-secondary">Ítems</span>
+                    <span class="fw-bold" id="rx-count">0</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <span class="text-body-secondary">Total de la compra</span>
+                    <span class="fs-3 fw-bold" id="rx-total">$ 0,00</span>
+                </div>
+                <button type="button" class="btn btn-primary btn-lg rounded-pill fw-bold" id="rx-confirm">Confirmar recepción</button>
+                <button type="button" class="btn btn-outline-secondary rounded-pill" id="rx-clear">Vaciar lista</button>
+                <p class="small text-body-secondary mb-0">
+                    Al confirmar se registra la compra: suma el stock, recalcula el costo promedio (CPP) y deja los movimientos de inventario,
+                    igual que una compra cargada a mano. La lista se guarda en este equipo hasta que la confirmes.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alta rápida: el código leído no existe -->
+<div class="modal fade" id="rx-new-modal" tabindex="-1" aria-labelledby="rx-new-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content border-0 rounded-4" id="rx-new-form" novalidate>
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold" id="rx-new-title">Producto nuevo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body pt-0">
+                <p class="small text-body-secondary">El código <strong id="rx-new-code-label"></strong> no está cargado. Completá los datos y se agrega a la recepción.</p>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="rx-new-name">Nombre</label>
+                    <input id="rx-new-name" type="text" class="form-control" required>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" for="rx-new-unit">Unidad</label>
+                        <select id="rx-new-unit" class="form-select">
+                            {% for value, label in unit_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" for="rx-new-category">Categoría</label>
+                        <select id="rx-new-category" class="form-select">
+                            <option value="">Sin categoría</option>
+                            {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" for="rx-new-price">Precio de venta ($)</label>
+                        <input id="rx-new-price" type="number" min="0" step="0.01" class="form-control" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" for="rx-new-cost">Costo ($)</label>
+                        <input id="rx-new-cost" type="number" min="0" step="0.01" class="form-control" value="0">
+                    </div>
+                </div>
+                <div id="rx-new-error" class="text-danger small mt-3" role="alert"></div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">Crear y agregar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/barcode-tools.js' %}"></script>
+<script>
+(function () {
+    'use strict';
+    const URLS = {
+        lookup: "{% url 'products:barcode_lookup' %}",
+        quickCreate: "{% url 'products:product_quick_create' %}",
+        purchase: "{% url 'products:purchase_create' %}",
+        purchaseList: "{% url 'products:purchase_list' %}",
+    };
+    const CSRF = "{{ csrf_token }}";
+    const DRAFT_KEY = 'impulso_recepcion_borrador';
+    const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+    const $ = (id) => document.getElementById(id);
+    const codeInput = $('rx-code');
+    const newModal = new bootstrap.Modal($('rx-new-modal'));
+    let rows = [];       // {product: {...}, qty: number, cost: number}
+    let pendingCode = '';
+
+    // ---------- Borrador en el equipo (comodidad: si no hay almacenamiento, se sigue igual) ----------
+    function saveDraft() {
+        try {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                rows, supplier: $('rx-supplier').value, invoice: $('rx-invoice').value,
+            }));
+        } catch (e) { /* sin almacenamiento */ }
+    }
+    function loadDraft() {
+        try {
+            const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+            if (!draft) return;
+            rows = Array.isArray(draft.rows) ? draft.rows : [];
+            $('rx-supplier').value = draft.supplier || '';
+            $('rx-invoice').value = draft.invoice || '';
+        } catch (e) { rows = []; }
+    }
+    function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* nada */ } }
+
+    function feedback(text, kind) {
+        const el = $('rx-feedback');
+        el.className = `small mb-3 text-${kind === 'error' ? 'danger' : kind === 'ok' ? 'success' : 'body-secondary'}`;
+        el.textContent = text;
+    }
+
+    // ---------- Lista ----------
+    function render() {
+        const tbody = $('rx-rows');
+        tbody.textContent = '';
+        let total = 0;
+        rows.forEach((row, index) => {
+            const tr = document.createElement('tr');
+
+            const name = document.createElement('td');
+            const strong = document.createElement('div');
+            strong.className = 'fw-bold';
+            strong.textContent = row.product.name;
+            const meta = document.createElement('div');
+            meta.className = 'small text-body-secondary';
+            meta.textContent = [row.product.barcode || row.product.sku, row.product.unit_label].filter(Boolean).join(' · ');
+            name.append(strong, meta);
+
+            const qtyCell = document.createElement('td');
+            const qty = document.createElement('input');
+            qty.type = 'number';
+            qty.className = 'form-control';
+            qty.min = row.product.is_discrete ? '1' : '0.001';
+            qty.step = row.product.is_discrete ? '1' : '0.001';
+            qty.value = row.qty;
+            qty.setAttribute('aria-label', `Cantidad de ${row.product.name}`);
+            qty.addEventListener('change', () => { row.qty = Number(qty.value); render(); });
+            qtyCell.append(qty);
+
+            const costCell = document.createElement('td');
+            const cost = document.createElement('input');
+            cost.type = 'number';
+            cost.className = 'form-control';
+            cost.min = '0';
+            cost.step = '0.01';
+            cost.value = row.cost;
+            cost.setAttribute('aria-label', `Costo unitario de ${row.product.name}`);
+            cost.addEventListener('change', () => { row.cost = Number(cost.value); render(); });
+            costCell.append(cost);
+
+            const subtotal = (Number(row.qty) || 0) * (Number(row.cost) || 0);
+            total += subtotal;
+            const sub = document.createElement('td');
+            sub.className = 'text-end fw-bold';
+            sub.textContent = money.format(subtotal);
+
+            const removeCell = document.createElement('td');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-sm btn-outline-danger border-0';
+            remove.setAttribute('aria-label', `Quitar ${row.product.name}`);
+            remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+            remove.addEventListener('click', () => { rows.splice(index, 1); render(); });
+            removeCell.append(remove);
+
+            tr.append(name, qtyCell, costCell, sub, removeCell);
+            tbody.append(tr);
+        });
+        $('rx-empty').classList.toggle('d-none', rows.length > 0);
+        $('rx-count').textContent = rows.length;
+        $('rx-total').textContent = money.format(total);
+        saveDraft();
+    }
+
+    function addProduct(product, quantity) {
+        const existing = rows.find((r) => r.product.id === product.id);
+        const step = quantity != null ? Number(quantity) : 1;
+        if (existing) existing.qty = Math.round((Number(existing.qty) + step) * 1000) / 1000;
+        else rows.push({ product, qty: step, cost: Number(product.cost_price) || 0 });
+        render();
+        feedback(`Agregado: ${product.name}${quantity != null ? ` (${quantity} ${product.unit_label})` : ''}`, 'ok');
+    }
+
+    async function handleCode(code) {
+        code = String(code || '').trim();
+        if (!code) return;
+        try {
+            const response = await fetch(`${URLS.lookup}?code=${encodeURIComponent(code)}`, { credentials: 'same-origin' });
+            const data = await response.json();
+            if (data.found) {
+                addProduct(data.product, data.quantity);
+            } else {
+                pendingCode = code;
+                $('rx-new-code-label').textContent = code;
+                $('rx-new-form').reset();
+                $('rx-new-error').textContent = '';
+                newModal.show();
+            }
+        } catch (e) {
+            feedback('No se pudo buscar el código. Revisá la conexión e intentá de nuevo.', 'error');
+        }
+    }
+
+    codeInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const code = codeInput.value;
+        codeInput.value = '';
+        handleCode(code);
+    });
+
+    $('rx-camera').addEventListener('click', () => {
+        ImpulsoBarcode.openCamera({ continuous: true, title: 'Recepción: escaneá cada producto', onCode: handleCode });
+    });
+
+    // ---------- Alta rápida ----------
+    $('rx-new-modal').addEventListener('shown.bs.modal', () => $('rx-new-name').focus());
+    $('rx-new-modal').addEventListener('hidden.bs.modal', () => codeInput.focus());
+    $('rx-new-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        $('rx-new-error').textContent = '';
+        const payload = {
+            barcode: pendingCode,
+            name: $('rx-new-name').value,
+            unit: $('rx-new-unit').value,
+            category_id: $('rx-new-category').value || null,
+            price: $('rx-new-price').value,
+            cost_price: $('rx-new-cost').value || '0',
+        };
+        try {
+            const response = await fetch(URLS.quickCreate, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok) { $('rx-new-error').textContent = data.error || 'No se pudo crear el producto.'; return; }
+            newModal.hide();
+            addProduct(data.product, null);
+        } catch (e) {
+            $('rx-new-error').textContent = 'No se pudo crear el producto. Revisá la conexión.';
+        }
+    });
+
+    // ---------- Confirmar: misma compra que la carga manual (purchase_create) ----------
+    $('rx-confirm').addEventListener('click', async () => {
+        if (!$('rx-supplier').value) { feedback('Elegí el proveedor antes de confirmar.', 'error'); $('rx-supplier').focus(); return; }
+        if (!rows.length) { feedback('No hay productos escaneados.', 'error'); return; }
+        const invalid = rows.find((r) => !(Number(r.qty) > 0) || Number(r.cost) < 0
+            || (r.product.is_discrete && !Number.isInteger(Number(r.qty))));
+        if (invalid) { feedback(`Revisá la cantidad o el costo de ${invalid.product.name}.`, 'error'); return; }
+
+        const form = new FormData();
+        form.append('csrfmiddlewaretoken', CSRF);
+        form.append('supplier_id', $('rx-supplier').value);
+        form.append('invoice_number', $('rx-invoice').value);
+        form.append('items_data', JSON.stringify(rows.map((r) => ({ product_id: r.product.id, qty: String(r.qty), cost: String(r.cost) }))));
+
+        $('rx-confirm').disabled = true;
+        try {
+            const response = await fetch(URLS.purchase, { method: 'POST', body: form, credentials: 'same-origin' });
+            if (response.redirected && new URL(response.url).pathname === URLS.purchaseList) {
+                rows = [];
+                clearDraft();
+                window.location.href = response.url;
+                return;
+            }
+            const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const alertEl = doc.querySelector('.alert');
+            feedback(alertEl ? alertEl.textContent.trim() : 'No se pudo registrar la recepción.', 'error');
+        } catch (e) {
+            feedback('No se pudo registrar la recepción. La lista sigue guardada en este equipo.', 'error');
+        } finally {
+            $('rx-confirm').disabled = false;
+        }
+    });
+
+    $('rx-clear').addEventListener('click', () => {
+        if (rows.length && !confirm('¿Vaciar la lista escaneada?')) return;
+        rows = [];
+        render();
+        codeInput.focus();
+    });
+    ['rx-supplier', 'rx-invoice'].forEach((id) => $(id).addEventListener('change', saveDraft));
+
+    loadDraft();
+    render();
+})();
+</script>
+{% endblock %}

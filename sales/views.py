@@ -1,11 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib import messages
-from django.db import transaction
+from django.db import models, transaction
 from django.http import HttpResponse, FileResponse, JsonResponse
 from django.views.decorators.http import require_POST
 from products.models import Product, PriceList, ProductPrice, InventoryMovement
 from customers.models import Customer, CurrentAccount
+from customers.phones import whatsapp_number
 from finance.models import CashSession, PaymentMethod
 from core.decorators import manager_required
 from .models import Sale, SaleReturn, SaleReturnDetail, Promotion
@@ -88,7 +89,7 @@ def pos_view(request):
     if not active_session:
         return render(request, 'sales/pos_no_session.html')
 
-    products = Product.objects.all().order_by('name')
+    products = Product.objects.filter(active=True).order_by('name')
     customers = Customer.objects.select_related('price_list')
     payment_methods = PaymentMethod.objects.filter(active=True)
     price_lists = PriceList.objects.filter(active=True)
@@ -127,8 +128,9 @@ def pos_view(request):
         'last_sale_id': last_sale_id,
         'active_session': active_session,
         'session_from_previous_day': timezone.localtime(active_session.start_date).date() < today,
-        'product_prices_json': json.dumps(product_prices),
-        'promotions_json': json.dumps(promos_data)
+        # '<' escapado: los nombres de promociones no pueden cerrar el <script> donde se vuelcan
+        'product_prices_json': json.dumps(product_prices).replace('<', '\\u003c'),
+        'promotions_json': json.dumps(promos_data).replace('<', '\\u003c')
     })
     # Las respuestas con mensajes o ticket pendiente no deben quedar en la caché offline
     if last_sale_id or has_messages:
@@ -154,7 +156,7 @@ def pos_catalog(request):
             'stock': str(p.stock),
             'category_id': p.category_id,
         }
-        for p in Product.objects.all().order_by('name')
+        for p in Product.objects.filter(active=True).order_by('name')
     ]
     response = JsonResponse({
         'generated_at': timezone.now().isoformat(),
@@ -321,8 +323,9 @@ def sale_list(request):
 @login_required
 def whatsapp_ticket(request, pk):
     sale = get_object_or_404(Sale, pk=pk)
-    if not sale.customer or not sale.customer.phone:
-        messages.error(request, "El cliente no tiene un teléfono registrado.")
+    phone = whatsapp_number(sale.customer.phone) if sale.customer else ''
+    if not phone:
+        messages.error(request, "El cliente no tiene un teléfono válido (código de área + número).")
         return redirect('sales:sale_list')
     
     resumen = f"*Ticket Digital - Impulso Smart*\n"
@@ -339,7 +342,7 @@ def whatsapp_ticket(request, pk):
     resumen += f"Gracias por su compra!"
     
     import urllib.parse
-    link = f"https://wa.me/{sale.customer.phone}?text={urllib.parse.quote(resumen)}"
+    link = f"https://wa.me/{phone}?text={urllib.parse.quote(resumen)}"
     return redirect(link)
 
 from core.models import ActivityLog
@@ -366,16 +369,30 @@ def sale_return(request, pk):
                 )
                 
                 return_details_text = []
+                # Tope por producto: lo vendido menos lo ya devuelto en devoluciones anteriores
+                # (y en esta misma), para que el mismo artículo no se devuelva dos veces.
+                available = {}
+                for d in sale.details.all():
+                    available[d.product_id] = available.get(d.product_id, Decimal('0')) + d.quantity
+                for row in SaleReturnDetail.objects.filter(sale_return__sale=sale).exclude(sale_return=sale_return) \
+                        .values('product_id').annotate(total=models.Sum('quantity')):
+                    available[row['product_id']] = available.get(row['product_id'], Decimal('0')) - row['total']
+
                 for detail in sale.details.all():
+                    product_name = detail.product.name if detail.product else "Producto eliminado"
                     try:
                         qty_to_return = Decimal(request.POST.get(f'qty_{detail.id}') or '0')
                     except InvalidOperation:
-                        raise Exception(f"Cantidad inválida para {detail.product.name}")
+                        raise Exception(f"Cantidad inválida para {product_name}")
                     if qty_to_return < 0:
                         raise Exception("La cantidad a devolver no puede ser negativa.")
                     if qty_to_return > 0:
-                        if qty_to_return > detail.quantity:
-                            raise Exception(f"No se puede devolver más de lo vendido ({detail.product.name})")
+                        if detail.product is None:
+                            raise Exception("No se puede devolver un producto que ya fue eliminado del sistema.")
+                        if qty_to_return > available.get(detail.product_id, Decimal('0')):
+                            remaining = max(available.get(detail.product_id, Decimal('0')), Decimal('0'))
+                            raise Exception(f"No se puede devolver más de lo vendido ({product_name}): quedan {remaining.normalize()} por devolver")
+                        available[detail.product_id] -= qty_to_return
                         
                         item_return_amount = detail.price * qty_to_return
                         total_return_amount += item_return_amount

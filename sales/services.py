@@ -393,9 +393,16 @@ def create_sale(*, user, cart, payment_method_id=None, payments=None, customer_i
             total_tax = Decimal('0.00')
             total_promo_disc = Decimal('0.00')
 
+            # Una sola instancia por producto: si el carrito trae varias líneas del mismo producto
+            # (p. ej. una venta sincronizada desde el modo offline), cada descuento de stock parte
+            # del stock ya descontado por la línea anterior en vez de una copia vieja.
+            locked_products = {}
             for item in cart:
                 try:
-                    product = Product.objects.select_for_update().get(pk=item['id'])
+                    product_id = int(item['id'])
+                    product = locked_products.get(product_id)
+                    if product is None:
+                        product = locked_products[product_id] = Product.objects.select_for_update().get(pk=product_id)
                 except (KeyError, ValueError, TypeError, Product.DoesNotExist):
                     raise SaleError(f"Producto inexistente en el carrito: {item.get('name') or item.get('id')}")
 

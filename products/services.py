@@ -16,6 +16,7 @@ def expiring_products(days, today=None):
     """Productos con stock que vencen dentro de `days` días o ya vencidos (expiry_date <= hoy + días)."""
     today = today or timezone.localdate()
     return Product.objects.filter(
+        active=True,
         stock__gt=0,
         expiry_date__isnull=False,
         expiry_date__lte=today + timedelta(days=days),
@@ -42,7 +43,7 @@ def purchase_suggestions(coverage_days=DEFAULT_COVERAGE_DAYS):
     velocity = daily_sales_velocity()
     coverage = Decimal(coverage_days)
     groups = {}
-    products = Product.objects.filter(id__in=velocity.keys()).select_related('supplier').order_by('name')
+    products = Product.objects.filter(id__in=velocity.keys(), active=True).select_related('supplier').order_by('name')
     for product in products:
         v14 = velocity[product.id]
         suggested = max(Decimal('0'), v14 * coverage - product.stock)

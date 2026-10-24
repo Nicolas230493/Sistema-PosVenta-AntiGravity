@@ -8,6 +8,7 @@ urlpatterns = [
     path('new/', views.product_create, name='product_create'),
     path('<int:pk>/edit/', views.product_update, name='product_update'),
     path('<int:pk>/delete/', views.product_delete, name='product_delete'),
+    path('<int:pk>/reactivate/', views.product_reactivate, name='product_reactivate'),
     path('<int:pk>/movements/', views.product_kardex, name='product_kardex'),
     # Categorías
     path('categories/', views.category_list, name='category_list'),
@@ -22,6 +23,9 @@ urlpatterns = [
     path('export/excel-advanced/', views.export_advanced_excel, name='export_advanced_excel'),
     path('import/excel/', views.import_inventory_excel, name='import_inventory_excel'),
     path('stock-entry/', views.stock_entry_scanner, name='stock_entry_scanner'),
+    path('reception/', views.stock_reception, name='stock_reception'),
+    path('api/barcode/', views.barcode_lookup, name='barcode_lookup'),
+    path('api/quick-create/', views.product_quick_create, name='product_quick_create'),
     path('purchases/', views.purchase_list, name='purchase_list'),
     path('purchases/new/', views.purchase_create, name='purchase_create'),
     path('admin-tools/', views.bulk_price_update, name='admin_tools'),

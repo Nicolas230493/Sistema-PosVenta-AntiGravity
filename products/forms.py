@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django import forms
-from .models import Product, InventoryMovement, Category, ADJUSTMENT_REASONS
+from .models import Product, InventoryMovement, Category, PriceLog, ADJUSTMENT_REASONS
+from .signals import can_change_prices, price_change_reason
 
 class CategoryForm(forms.ModelForm):
     class Meta:
@@ -20,7 +21,7 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ['sku', 'barcode', 'name', 'unit', 'category', 'description', 'price', 'cost_price', 'peso_kg', 'tax_rate', 'stock', 'min_stock', 'expiry_date', 'supplier']
+        fields = ['sku', 'barcode', 'plu', 'name', 'unit', 'category', 'description', 'price', 'cost_price', 'peso_kg', 'tax_rate', 'stock', 'min_stock', 'expiry_date', 'supplier']
         widgets = {
             'expiry_date': forms.DateInput(attrs={'type': 'date'}),
         }
@@ -30,6 +31,12 @@ class ProductForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['sku'].required = False
         self.fields['barcode'].required = False
+        # Precio de venta y costo de un producto existente: solo superadministrador o dueño.
+        # Un campo deshabilitado ignora lo que llegue en el POST y conserva el valor actual.
+        if self.instance.pk and user is not None and not can_change_prices(user):
+            for name in ('price', 'cost_price'):
+                self.fields[name].disabled = True
+                self.fields[name].help_text = "Solo el superadministrador o el dueño del negocio pueden cambiar precios."
 
     def clean_sku(self):
         sku = self.cleaned_data.get('sku')
@@ -73,7 +80,15 @@ class ProductForm(forms.ModelForm):
     def save(self, commit=True):
         is_update = bool(self.instance and self.instance.pk)
         old_stock = self.instance.stock if is_update else None
-        product = super().save(commit=commit)
+        old_cost = Product.objects.filter(pk=self.instance.pk).values_list('cost_price', flat=True).first() if is_update else None
+        with price_change_reason("Edición del producto"):
+            product = super().save(commit=commit)
+
+        # El precio de venta lo registra la señal; el costo manual se registra acá
+        # (el costo por compras ya lo registra receive_stock con el CPP)
+        if commit and is_update and old_cost is not None and product.cost_price != old_cost:
+            PriceLog.objects.create(product=product, old_price=old_cost, new_price=product.cost_price,
+                                    price_type='COST', reason="Edición del producto", user=self.user)
 
         if commit and is_update and old_stock is not None and product.stock != old_stock:
             diff = product.stock - old_stock
@@ -118,7 +133,7 @@ class InventoryMovementForm(forms.ModelForm):
 
 class StockAdjustmentForm(forms.Form):
     product = forms.ModelChoiceField(
-        queryset=Product.objects.all().order_by('name'),
+        queryset=Product.objects.filter(active=True).order_by('name'),
         label="Producto",
         widget=forms.Select(attrs={'class': 'form-select select2'})
     )

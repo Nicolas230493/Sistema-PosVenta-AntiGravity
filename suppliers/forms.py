@@ -16,7 +16,7 @@ class SupplierRemitoEntryForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-select'})
     )
     product = forms.ModelChoiceField(
-        queryset=Product.objects.all().order_by('name'),
+        queryset=Product.objects.filter(active=True).order_by('name'),
         label="Producto",
         widget=forms.Select(attrs={'class': 'form-select'})
     )

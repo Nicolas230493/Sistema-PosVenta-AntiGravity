@@ -115,4 +115,40 @@
         </tbody>
     </table>
 </div>
+
+<!-- Historial de precios: quién cambió cada precio (solo superadministrador o dueño del negocio) -->
+<div class="card border-0 shadow-sm rounded-4 mt-4">
+    <div class="card-header bg-transparent border-0 pt-4 px-4">
+        <h5 class="fw-bold mb-1">Historial de precios</h5>
+        <p class="small text-body-secondary mb-0">Los precios de venta y el costo manual solo los cambian el superadministrador o el dueño del negocio. El costo por compras se recalcula solo (CPP).</p>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="bg-body-tertiary">
+                <tr>
+                    <th class="ps-4">Fecha</th>
+                    <th>Tipo</th>
+                    <th class="text-end">Anterior</th>
+                    <th class="text-end">Nuevo</th>
+                    <th>Usuario</th>
+                    <th class="pe-4">Motivo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in price_history %}
+                <tr>
+                    <td class="ps-4 small">{{ log.date|date:"d/m/Y H:i" }}</td>
+                    <td>{{ log.get_price_type_display }}</td>
+                    <td class="text-end">${{ log.old_price }}</td>
+                    <td class="text-end fw-bold">${{ log.new_price }}</td>
+                    <td>{{ log.user.username|default:"Sistema" }}</td>
+                    <td class="pe-4 small text-body-secondary">{{ log.reason|default:"—" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center py-4 text-body-secondary">Sin cambios de precio registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endblock %}

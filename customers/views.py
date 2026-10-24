@@ -4,12 +4,13 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.db.models import Q
 from django.db import transaction
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.http import HttpResponse
 from django.utils import timezone
 from sales.customer_utils import generate_customer_statement_pdf
 from finance.models import PaymentMethod
 from .models import Customer, Payment
+from .phones import whatsapp_number
 from .forms import CustomerForm
 import urllib.parse
 
@@ -37,9 +38,9 @@ def export_statement_pdf(request, pk):
 def whatsapp_statement(request, pk):
     """Estado de cuenta resumido por WhatsApp con los últimos movimientos y el saldo actual."""
     customer = get_object_or_404(Customer, pk=pk)
-    phone = ''.join(ch for ch in (customer.phone or '') if ch.isdigit())
+    phone = whatsapp_number(customer.phone)
     if not phone:
-        messages.error(request, "El cliente no tiene un teléfono registrado.")
+        messages.error(request, "El cliente no tiene un teléfono válido (código de área + número).")
         return redirect('customers:customer_detail', pk=pk)
 
     entries = statement_entries(customer)
@@ -72,14 +73,22 @@ def customer_payment(request, pk):
         notes = request.POST.get('notes')
         
         try:
-            amount = Decimal(amount)
+            try:
+                amount = Decimal(str(amount or '').replace(',', '.'))
+            except InvalidOperation:
+                raise ValueError("Monto inválido.")
             if amount <= 0:
-                raise Exception("El monto debe ser mayor a cero.")
-            
-            method = PaymentMethod.objects.get(id=method_id)
-            
+                raise ValueError("El monto debe ser mayor a cero.")
+            method = payment_methods.filter(id=method_id).first()
+            if method is None:
+                raise ValueError("Elegí un medio de pago.")
+
             with transaction.atomic():
-                # Crear el registro de pago
+                # Primero el saldo (con bloqueo) y después el pago: la señal que asienta la
+                # cuenta corriente toma el saldo ya actualizado como "saldo posterior".
+                customer = Customer.objects.select_for_update().get(pk=customer.pk)
+                customer.balance -= amount
+                customer.save(update_fields=['balance'])
                 Payment.objects.create(
                     customer=customer,
                     amount=amount,
@@ -87,17 +96,13 @@ def customer_payment(request, pk):
                     notes=notes,
                     user=request.user
                 )
-                
-                # Descontar del saldo del cliente
-                customer.balance -= amount
-                customer.save()
-                
-                messages.success(request, f"Pago de ${amount} registrado correctamente para {customer.full_name}.")
-                return redirect('customers:customer_list')
-        except Exception as e:
-            messages.error(request, f"Error al registrar pago: {str(e)}")
-            
-    return render(request, 'customers/customer_payment.html', {'customer': customer})
+
+            messages.success(request, f"Pago de ${amount} registrado correctamente para {customer.full_name}.")
+            return redirect('customers:customer_list')
+        except ValueError as e:
+            messages.error(request, f"Error al registrar pago: {e}")
+
+    return render(request, 'customers/customer_payment.html', {'customer': customer, 'payment_methods': payment_methods})
 
 @login_required
 def customer_list(request):
@@ -152,8 +157,12 @@ def whatsapp_reminder(request, pk):
         messages.info(request, "El cliente no tiene saldo deudor.")
         return redirect('customers:customer_detail', pk=pk)
     
+    phone = whatsapp_number(customer.phone)
+    if not phone:
+        messages.error(request, "El cliente no tiene un teléfono válido (código de área + número).")
+        return redirect('customers:customer_detail', pk=pk)
     mensaje = f"Hola {customer.full_name}, te saludamos de IMPULSO SMART. Te recordamos que posees un saldo pendiente de ${customer.balance}. ¡Muchas gracias!"
-    link = f"https://wa.me/{customer.phone}?text={urllib.parse.quote(mensaje)}"
+    link = f"https://wa.me/{phone}?text={urllib.parse.quote(mensaje)}"
     return redirect(link)
 
 @staff_member_required

@@ -66,3 +66,18 @@ class ExpirationCheckMiddleware:
                     return redirect('cuenta_expirada')
         
         return self.get_response(request)
+
+
+class CurrentUserMiddleware:
+    """Deja el usuario del pedido disponible para el historial de precios (products.signals)."""
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from products.signals import set_current_user
+        user = getattr(request, 'user', None)
+        set_current_user(user if user is not None and user.is_authenticated else None)
+        try:
+            return self.get_response(request)
+        finally:
+            set_current_user(None)

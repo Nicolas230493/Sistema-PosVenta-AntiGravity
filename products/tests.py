@@ -179,6 +179,8 @@ class CsvImporterTests(TestCase):
         self.assertEqual(len(response.context['movements']), 3)
 
     def test_comma_csv_updates_existing_product_by_sku(self):
+        from django.contrib.auth.models import Group
+        self.user.groups.add(Group.objects.get_or_create(name='Administrador')[0])  # cambiar precios: solo el dueño
         Product.objects.create(sku='ABC1', name='Huevos', price=Decimal('10'))
 
         self._upload("sku,precio,stock\nABC1,2500.50,30\n")
@@ -499,3 +501,149 @@ class PurchaseSuggestionTests(TestCase):
         self.assertEqual(detail.product, self.alas)
         self.assertEqual(detail.quantity, 17)  # 2 x 10 - 3
         self.assertEqual(detail.order.supplier, self.supplier)
+
+
+def _scale_code(prefix, plu, value):
+    """Arma una etiqueta de balanza EAN-13 válida: prefijo + PLU + valor + dígito verificador."""
+    from .barcodes import ean13_check_digit
+    first12 = f"{prefix}{plu}{value}"
+    assert len(first12) == 12
+    return first12 + str(ean13_check_digit(first12))
+
+
+class BarcodeParsingTests(TestCase):
+    """Código de barras: EAN-13 y etiquetas de balanza (prefijos 20-29)."""
+
+    def test_ean13_check_digit(self):
+        from .barcodes import ean13_check_digit, is_valid_ean13
+        self.assertEqual(ean13_check_digit('400638133393'), 1)
+        self.assertTrue(is_valid_ean13('4006381333931'))
+        self.assertFalse(is_valid_ean13('4006381333932'))
+        self.assertFalse(is_valid_ean13('40063813339'))
+
+    def test_parse_scale_barcode_formats(self):
+        from .barcodes import parse_scale_barcode
+        label = parse_scale_barcode(_scale_code('21', '00042', '01250'))
+        self.assertEqual((label.plu, label.value, label.mode), (42, 1250, 'peso'))
+
+        label = parse_scale_barcode(_scale_code('20', '1234', '006500'), plu_digits=4, mode='importe')
+        self.assertEqual((label.plu, label.value, label.mode), (1234, 6500, 'importe'))
+
+        label = parse_scale_barcode(_scale_code('29', '000777', '0950'), plu_digits=6)
+        self.assertEqual((label.plu, label.value), (777, 950))
+
+    def test_parse_scale_barcode_rejects_other_codes(self):
+        from .barcodes import parse_scale_barcode
+        valid = _scale_code('21', '00042', '01250')
+        broken = valid[:12] + str((int(valid[12]) + 1) % 10)
+        self.assertIsNone(parse_scale_barcode(broken))             # dígito verificador incorrecto
+        self.assertIsNone(parse_scale_barcode('4006381333931'))    # EAN de fábrica (no empieza con 2)
+        self.assertIsNone(parse_scale_barcode('ABC123'))
+        self.assertIsNone(parse_scale_barcode(valid, plu_digits=3))
+
+
+class BarcodeLookupTests(TestCase):
+    def setUp(self):
+        from core.models import ConfiguracionSistema
+        self.user = User.objects.create_user(username='scan', password='pass12345', is_staff=True)
+        self.client.force_login(self.user)
+        self.config = ConfiguracionSistema.get_config()
+        self.pechuga = Product.objects.create(sku='PEC', name='Pechuga', unit='kg', price=Decimal('5200'),
+                                              cost_price=Decimal('3100'), plu=42)
+        self.huevos = Product.objects.create(sku='HUE', name='Huevos maple', unit='unidad', price=Decimal('6000'),
+                                             barcode='7790001000017', plu=7)
+
+    def test_resolve_by_barcode_sku_and_scale_weight(self):
+        from .barcodes import resolve_code
+        self.assertEqual(resolve_code('7790001000017')['source'], 'barcode')
+        self.assertEqual(resolve_code('PEC')['product'], self.pechuga)
+        self.assertEqual(resolve_code('PEC')['source'], 'sku')
+
+        result = resolve_code(_scale_code('21', '00042', '01250'))
+        self.assertEqual(result['product'], self.pechuga)
+        self.assertEqual(result['source'], 'balanza')
+        self.assertEqual(result['quantity'], Decimal('1.250'))
+
+        # Producto por unidad en modo peso: el valor son unidades
+        self.assertEqual(resolve_code(_scale_code('21', '00007', '00003'))['quantity'], Decimal('3'))
+        self.assertIsNone(resolve_code(_scale_code('21', '00099', '01250')))  # PLU sin producto
+        self.assertIsNone(resolve_code('NOEXISTE'))
+
+    def test_resolve_scale_amount_mode(self):
+        from .barcodes import resolve_code
+        self.config.balanza_formato = 'importe'
+        self.config.balanza_digitos_plu = 4
+        self.config.save()
+        result = resolve_code(_scale_code('20', '0042', '006500'))
+        self.assertEqual(result['quantity'], Decimal('1.250'))  # $6.500 / $5.200 por kg
+
+    def test_lookup_endpoint(self):
+        found = self.client.get(reverse('products:barcode_lookup'), {'code': _scale_code('21', '00042', '00800')}).json()
+        self.assertTrue(found['found'])
+        self.assertEqual(found['product']['name'], 'Pechuga')
+        self.assertEqual(found['quantity'], '0.800')
+
+        missing = self.client.get(reverse('products:barcode_lookup'), {'code': '7799999999994'}).json()
+        self.assertEqual(missing, {'found': False, 'code': '7799999999994'})
+
+    def test_quick_create_product(self):
+        url = reverse('products:product_quick_create')
+        payload = {'barcode': '7799999999994', 'name': 'Rebozador', 'unit': 'unidad', 'price': '1500', 'cost_price': '900'}
+
+        response = self.client.post(url, json.dumps(payload), content_type='application/json')
+
+        self.assertEqual(response.status_code, 201)
+        product = Product.objects.get(barcode='7799999999994')
+        self.assertEqual((product.name, product.price, product.cost_price, product.stock),
+                         ('Rebozador', Decimal('1500.00'), Decimal('900.00'), Decimal('0')))
+        self.assertEqual(response.json()['product']['id'], product.id)
+
+        duplicate = self.client.post(url, json.dumps(payload), content_type='application/json')
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn('ya pertenece', duplicate.json()['error'])
+
+        no_name = self.client.post(url, json.dumps({**payload, 'barcode': '1', 'name': ' '}), content_type='application/json')
+        self.assertEqual(no_name.status_code, 400)
+        bad_price = self.client.post(url, json.dumps({**payload, 'barcode': '2', 'price': 'abc'}), content_type='application/json')
+        self.assertEqual(bad_price.status_code, 400)
+
+        self.client.logout()
+        self.assertEqual(self.client.post(url, json.dumps(payload), content_type='application/json').status_code, 302)
+
+    def test_reception_page_and_confirmation_use_purchase_flow(self):
+        """La recepción confirma contra purchase_create: compra, stock, CPP y movimientos."""
+        supplier = Supplier.objects.create(name='Avícola Granja')
+        page = self.client.get(reverse('products:stock_reception'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Avícola Granja')
+        self.assertContains(page, 'barcode-tools.js')
+
+        self.pechuga.stock = Decimal('10.000')
+        self.pechuga.save()
+        response = self.client.post(reverse('products:purchase_create'), {
+            'supplier_id': supplier.id,
+            'invoice_number': 'R-0001',
+            'items_data': json.dumps([{'product_id': self.pechuga.id, 'qty': '10', 'cost': '3500'}]),
+        })
+
+        self.assertRedirects(response, reverse('products:purchase_list'), fetch_redirect_response=False)
+        self.pechuga.refresh_from_db()
+        self.assertEqual(self.pechuga.stock, Decimal('20.000'))
+        self.assertEqual(self.pechuga.cost_price, Decimal('3300.00'))  # (10 × 3100 + 10 × 3500) / 20
+        self.assertTrue(InventoryMovement.objects.filter(product=self.pechuga, movement_type='PURCHASE_IN').exists())
+
+    def test_stock_entry_page_offers_camera_and_reception(self):
+        page = self.client.get(reverse('products:stock_entry_scanner'))
+        self.assertContains(page, 'id="camera-scan"')
+        self.assertContains(page, reverse('products:stock_reception'))
+
+    def test_scale_settings_are_editable(self):
+        from core.models import ConfiguracionSistema
+        self.user.is_superuser = True
+        self.user.save()
+        self.client.post(reverse('configuracion'), {
+            'nombre_empresa': 'Pollería', 'color_primario': '#4318ff', 'dias_alerta_vencimiento': 7,
+            'balanza_formato': 'importe', 'balanza_digitos_plu': 4,
+        })
+        config = ConfiguracionSistema.get_config()
+        self.assertEqual((config.balanza_formato, config.balanza_digitos_plu), ('importe', 4))

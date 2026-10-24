@@ -1,13 +1,14 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q, F, Sum, Count
+from django.db.models import Q, F, Sum, Count, ProtectedError
 from django.db import transaction
 from django.utils import timezone
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse, FileResponse, JsonResponse
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.db.models.functions import ExtractHour
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 import os
 import json
 import pandas as pd
@@ -16,7 +17,10 @@ from decimal import Decimal, InvalidOperation
 import csv
 from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail, LOSS_REASONS, MOVEMENT_TYPES
 from .forms import ProductForm, InventoryMovementForm, CategoryForm, StockAdjustmentForm
+from django.core.exceptions import ValidationError
+from .barcodes import resolve_code
 from .importers import import_products, parse_decimal
+from .signals import price_change_reason
 from .services import DEFAULT_COVERAGE_DAYS, purchase_suggestions
 from .utils import generate_product_labels, generate_inventory_valuation_pdf
 from sales.models import Sale, SaleDetail, SaleReturn, SaleReturnDetail
@@ -57,6 +61,8 @@ def category_update(request, pk):
     return render(request, 'products/category_form.html', {'form': form, 'title': 'Editar Categoría'})
 
 from core.models import ActivityLog
+from core.decorators import es_administrador
+from finance.services import net_profit
 
 @staff_member_required
 def category_delete(request, pk):
@@ -78,7 +84,9 @@ def product_list(request):
     status_filter = request.GET.get('status')
     category_id = request.GET.get('category')
     
-    products = Product.objects.select_related('supplier', 'category').all()
+    # Por defecto, solo productos activos; ?inactivos=1 lista los desactivados (para reactivarlos)
+    show_inactive = request.GET.get('inactivos') == '1'
+    products = Product.objects.select_related('supplier', 'category').filter(active=not show_inactive)
     categories = Category.objects.all()
 
     if query:
@@ -101,7 +109,9 @@ def product_list(request):
     return render(request, 'products/product_list.html', {
         'products': products, 
         'categories': categories,
-        'today': timezone.localdate()
+        'today': timezone.localdate(),
+        'show_inactive': show_inactive,
+        'inactive_count': Product.objects.filter(active=False).count(),
     })
 
 @login_required
@@ -129,19 +139,67 @@ def product_update(request, pk):
         form = ProductForm(instance=product, user=request.user)
     return render(request, 'products/product_form.html', {'form': form, 'title': 'Editar Producto'})
 
+def product_has_history(product):
+    """Ventas, compras, devoluciones, movimientos, mermas o cambios de precio: borrarlo los perdería."""
+    return (
+        product.movements.exists()
+        or product.losses.exists()
+        or product.price_logs.exists()
+        or SaleDetail.objects.filter(product=product).exists()
+        or SaleReturnDetail.objects.filter(product=product).exists()
+        or PurchaseDetail.objects.filter(product=product).exists()
+        or PurchaseOrderDetail.objects.filter(product=product).exists()
+    )
+
+
 @staff_member_required
 def product_delete(request, pk):
+    """
+    Sin historial, el producto se borra. Con historial se DESACTIVA: deja de ofrecerse en el POS,
+    búsquedas, alertas y compras, pero sus ventas, compras, mermas y precios quedan para los reportes.
+    """
     product = get_object_or_404(Product, pk=pk)
+    has_history = product_has_history(product)
     if request.method == 'POST':
-        ActivityLog.objects.create(
-            user=request.user,
-            action=f"Producto eliminado: {product.name} (SKU: {product.sku})",
-            module="Productos"
-        )
-        product.delete()
+        if has_history:
+            product.active = False
+            product.save(update_fields=['active'])
+            ActivityLog.objects.create(
+                user=request.user,
+                action=f"Producto desactivado: {product.name} (SKU: {product.sku})",
+                module="Productos"
+            )
+            messages.success(request, f"'{product.name}' quedó desactivado: tiene historial, así que se conserva para los reportes. Podés reactivarlo desde «Ver desactivados».")
+            return redirect('products:product_list')
+        try:
+            with transaction.atomic():
+                product.delete()
+                ActivityLog.objects.create(
+                    user=request.user,
+                    action=f"Producto eliminado: {product.name} (SKU: {product.sku})",
+                    module="Productos"
+                )
+        except ProtectedError:
+            messages.error(request, f"'{product.name}' no se puede eliminar porque tiene registros asociados.")
+            return redirect('products:product_list')
         messages.success(request, f"Producto '{product.name}' eliminado exitosamente.")
         return redirect('products:product_list')
-    return render(request, 'products/product_confirm_delete.html', {'product': product})
+    return render(request, 'products/product_confirm_delete.html', {'product': product, 'has_history': has_history})
+
+
+@staff_member_required
+@require_POST
+def product_reactivate(request, pk):
+    product = get_object_or_404(Product, pk=pk, active=False)
+    product.active = True
+    product.save(update_fields=['active'])
+    ActivityLog.objects.create(
+        user=request.user,
+        action=f"Producto reactivado: {product.name} (SKU: {product.sku})",
+        module="Productos"
+    )
+    messages.success(request, f"'{product.name}' está activo otra vez.")
+    return redirect(f"{reverse('products:product_list')}?inactivos=1")
 
 @staff_member_required
 def download_backup(request):
@@ -159,25 +217,39 @@ def download_backup(request):
 
 @staff_member_required
 def bulk_price_update(request):
-    if not request.user.is_superuser and not request.user.groups.filter(name='Administradores').exists():
+    if not es_administrador(request.user):
         messages.error(request, "Solo administradores pueden actualizar precios masivamente.")
         return redirect('products:admin_tools')
     if request.method == 'POST':
         category_id = request.POST.get('category')
-        percentage = float(request.POST.get('percentage', 0))
+        percentage = parse_decimal(request.POST.get('percentage'), default=None)  # acepta "10,5"
+        if percentage is None or percentage == 0:
+            messages.error(request, "Ingresá un porcentaje válido (por ejemplo 10 o -5,5).")
+            return redirect('products:admin_tools')
         if percentage <= -100:
             messages.error(request, "El porcentaje no puede dejar precios en cero o negativos.")
             return redirect('products:admin_tools')
-        
+
         target = "Todos los productos"
+        products = Product.objects.filter(active=True)
         if category_id:
-            category = Category.objects.get(id=category_id)
+            category = Category.objects.filter(id=category_id).first() if str(category_id).isdigit() else None
+            if category is None:
+                messages.error(request, "La categoría elegida no existe.")
+                return redirect('products:admin_tools')
             target = f"Categoría: {category.name}"
-            products = Product.objects.filter(category_id=category_id)
-            products.update(price=F('price') * (1 + (percentage / 100)))
-        else:
-            Product.objects.all().update(price=F('price') * (1 + (percentage / 100)))
-        
+            products = products.filter(category=category)
+
+        # Producto por producto: precio redondeado a centavos; save() dispara la señal que deja
+        # el cambio en el historial de precios (el .update() anterior la salteaba)
+        factor = 1 + percentage / 100
+        with transaction.atomic(), price_change_reason(f"Actualización masiva {percentage}% ({target})"):
+            for product in products.select_for_update():
+                new_price = (product.price * factor).quantize(Decimal('0.01'))
+                if new_price != product.price:
+                    product.price = new_price
+                    product.save(update_fields=['price'])
+
         ActivityLog.objects.create(
             user=request.user,
             action=f"Actualización masiva de precios ({percentage}%)",
@@ -224,87 +296,85 @@ def stock_loss_create(request):
 
 @staff_member_required
 def business_intelligence(request):
-    if not request.user.is_superuser and not request.user.groups.filter(name='Administradores').exists():
+    if not es_administrador(request.user):
         messages.error(request, "No tenés permiso para acceder a Inteligencia de Ventas.")
         return redirect('dashboard')
 
+    # Inicio del período en hora local (no en UTC: "hoy" empieza a las 00:00 de Argentina)
     period = request.GET.get('period', 'month')
-    start_date = None
-    end_date = timezone.now()
-
+    today = timezone.localdate()
+    tz = timezone.get_current_timezone()
     if period == 'today':
-        start_date = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = datetime.combine(today, time.min, tzinfo=tz)
     elif period == 'week':
         start_date = timezone.now() - timedelta(days=7)
-    elif period == 'month':
-        start_date = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     elif period == 'all':
         start_date = None
+    else:
+        period = 'month'
+        start_date = datetime.combine(today.replace(day=1), time.min, tzinfo=tz)
+    end_date = timezone.now()
 
-    # Filtros base
-    sale_filters = Q()
-    expense_filters = Q()
-    return_filters = Q()
-    movement_filters = Q(movement_type='IN')
-
+    # Solo ventas concretadas: sin anuladas ni pedidos con seña pendientes
+    sales = Sale.objects.filter(status=Sale.STATUS_COMPLETED)
     if start_date:
-        sale_filters &= Q(fecha_hora__gte=start_date)
-        expense_filters &= Q(date__gte=start_date)
-        return_filters &= Q(date__gte=start_date)
-        movement_filters &= Q(product__inventorymovement__date__gte=start_date) # Ajuste para ranking de proveedores
+        sales = sales.filter(fecha_hora__gte=start_date)
 
-    # 1. Gráfico de Horas Pico
-    sales_by_hour = Sale.objects.filter(sale_filters).annotate(hour=ExtractHour('fecha_hora')).values('hour').annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
+    # 1. Gráfico de Horas Pico (números como float: el template los vuelca a JavaScript)
+    sales_by_hour = [
+        {'hour': row['hour'], 'count': row['count'], 'total': float(row['total'] or 0)}
+        for row in sales.annotate(hour=ExtractHour('fecha_hora')).values('hour')
+        .annotate(count=Count('id'), total=Sum('total_amount')).order_by('hour')
+    ]
 
     # 2. Top Productos (Más vendidos)
-    top_products = SaleDetail.objects.filter(sale__fecha_hora__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).values('product__name').annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
+    top_products = [
+        {'product__name': row['product__name'] or 'Producto eliminado', 'total_qty': float(row['total_qty'] or 0)}
+        for row in SaleDetail.objects.filter(sale__in=sales).values('product__name')
+        .annotate(total_qty=Sum('quantity')).order_by('-total_qty')[:10]
+    ]
 
     # 3. Reporte de Productos Muertos (>60 días sin ventas)
     # Excluimos productos creados en los últimos 30 días para no penalizar stock nuevo
     thirty_days_ago = timezone.now() - timedelta(days=30)
     sixty_days_ago = timezone.now() - timedelta(days=60)
-    
-    sold_ids = SaleDetail.objects.filter(sale__fecha_hora__gte=sixty_days_ago).values_list('product_id', flat=True)
-    dead_products = Product.objects.exclude(id__in=sold_ids).filter(created_at__lt=thirty_days_ago, stock__gt=0).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
+
+    sold_ids = SaleDetail.objects.filter(
+        sale__status=Sale.STATUS_COMPLETED, sale__fecha_hora__gte=sixty_days_ago
+    ).values_list('product_id', flat=True)
+    dead_products = Product.objects.exclude(id__in=sold_ids).filter(active=True, created_at__lt=thirty_days_ago, stock__gt=0).annotate(capital=F('stock') * F('cost_price')).order_by('-capital')
 
     total_dead_capital = dead_products.aggregate(total=Sum(F('stock') * F('cost_price')))['total'] or 0
 
-    # 4. Ranking de Proveedores (Por inversión en compras)
-    # Ajuste: Filtramos directamente por el campo 'date' del modelo InventoryMovement
-    movement_filters = Q(movement_type='IN')
+    # 4. Ranking de Proveedores (Por inversión en compras): las compras quedan como PURCHASE_IN
+    # (antes de SPEC-SUP-07 eran IN, se cuentan ambas)
+    movement_filters = Q(movement_type__in=('IN', 'PURCHASE_IN'))
     if start_date:
         movement_filters &= Q(date__gte=start_date)
-    
     supplier_ranking = InventoryMovement.objects.filter(movement_filters).values('product__supplier__name').annotate(total_spent=Sum(F('quantity') * F('cost_price'))).order_by('-total_spent')
 
-    # 5. Ganancia Neta (Ventas - Costos - Gastos - Devoluciones)
-    from finance.models import CashExpense
+    # 5. Ganancia Neta: la misma cuenta que el reporte de Ganancia Neta Real (SPEC-FIN-06)
+    report = net_profit(start_date or datetime(2000, 1, 1, tzinfo=tz), end_date)
 
-    total_revenue = Sale.objects.filter(sale_filters).aggregate(total=Sum('total_amount'))['total'] or 0
-    total_cost = SaleDetail.objects.filter(sale__fecha_hora__gte=start_date if start_date else timezone.make_aware(timezone.datetime(2000,1,1))).aggregate(total=Sum(F('quantity') * F('unit_cost')))['total'] or 0
-    total_expenses = CashExpense.objects.filter(expense_filters).aggregate(total=Sum('amount'))['total'] or 0
-    total_returns = SaleReturn.objects.filter(return_filters).aggregate(total=Sum('total_amount'))['total'] or 0
-    
     # 6. Impacto de Marketing
-    total_promo_discounts = Sale.objects.filter(sale_filters).aggregate(total=Sum('promo_discount'))['total'] or 0
-    total_points_discounts = Sale.objects.filter(sale_filters).aggregate(total=Sum('points_discount'))['total'] or 0
+    marketing = sales.aggregate(promo=Sum('promo_discount'), points=Sum('points_discount'))
+    total_promo_discounts = marketing['promo'] or 0
+    total_points_discounts = marketing['points'] or 0
     total_marketing_investment = total_promo_discounts + total_points_discounts
-
-    net_profit = total_revenue - total_cost - total_expenses - total_returns
 
     context = {
         'period': period,
-        'sales_hour_data': list(sales_by_hour), 
-        'top_products': list(top_products),
+        'sales_hour_data': json.dumps(sales_by_hour),
+        'top_products': json.dumps(top_products).replace('<', '\\u003c'),
         'dead_products': dead_products[:15],
         'total_dead_capital': total_dead_capital,
         'supplier_ranking': supplier_ranking,
         'net_profit_data': {
-            'revenue': total_revenue,
-            'cost': total_cost,
-            'expenses': total_expenses,
-            'returns': total_returns,
-            'profit': net_profit
+            'revenue': report['gross_sales'],
+            'cost': report['cmv'],
+            'expenses': report['expenses'] + report['losses'],  # gastos de caja + mermas al costo
+            'returns': report['returns'],
+            'profit': report['net_profit'],
         },
         'marketing_impact': {
             'promo_discounts': total_promo_discounts,
@@ -321,13 +391,13 @@ def export_advanced_excel(request):
     first_day_month = today.replace(day=1)
 
     # Hoja 1: Ventas del Mes
-    sales = Sale.objects.filter(fecha_hora__date__gte=first_day_month).values('id', 'fecha_hora', 'customer__full_name', 'total_amount', 'payment_method__name')
+    sales = Sale.objects.filter(fecha_hora__date__gte=first_day_month, status=Sale.STATUS_COMPLETED).values('id', 'fecha_hora', 'customer__full_name', 'total_amount', 'payment_method__name')
     df_sales = pd.DataFrame(list(sales))
     if not df_sales.empty:
         df_sales['fecha_hora'] = df_sales['fecha_hora'].dt.strftime('%d/%m/%Y %H:%M')
 
     # Hoja 2: Stock Crítico
-    critical_stock = Product.objects.filter(stock__lte=F('min_stock')).values('name', 'stock', 'min_stock', 'supplier__name')
+    critical_stock = Product.objects.filter(active=True, stock__lte=F('min_stock')).values('name', 'stock', 'min_stock', 'supplier__name')
     df_critical = pd.DataFrame(list(critical_stock))
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -529,7 +599,7 @@ def _filter_inventory_queryset(request):
     category_id = request.GET.get('category')
     q = request.GET.get('q')
 
-    qs = Product.objects.select_related('supplier', 'category').all().order_by('name')
+    qs = Product.objects.select_related('supplier', 'category').filter(active=True).order_by('name')
 
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(barcode__icontains=q))
@@ -648,6 +718,7 @@ def product_kardex(request, pk):
         'product': product,
         'kardex_rows': kardex_rows,
         'current_stock': product.stock,
+        'price_history': product.price_logs.select_related('user').order_by('-date', '-id')[:50],
     })
 
 @login_required
@@ -707,7 +778,7 @@ def import_inventory_excel(request):
     uploaded = request.FILES.get('excel_file') or request.FILES.get('file')
     if request.method == 'POST' and uploaded:
         try:
-            created, updated, warnings = import_products(uploaded)
+            created, updated, warnings = import_products(uploaded, user=request.user)
         except Exception as e:
             messages.error(request, f"No se pudo leer el archivo: {e}")
             return redirect('products:product_list')
@@ -727,7 +798,7 @@ def purchase_list(request):
 @login_required
 def purchase_create(request):
     suppliers = Supplier.objects.all()
-    products = Product.objects.all()
+    products = Product.objects.filter(active=True)
     if request.method == 'POST':
         supplier_id = request.POST.get('supplier_id')
         invoice_number = request.POST.get('invoice_number')
@@ -770,7 +841,7 @@ def stock_entry_scanner(request):
             messages.error(request, "La cantidad debe ser mayor a cero.")
             return redirect('products:stock_entry_scanner')
         
-        product = Product.objects.filter(Q(barcode=barcode) | Q(sku=barcode)).first()
+        product = Product.objects.filter(Q(barcode=barcode) | Q(sku=barcode), active=True).first()
         
         if product:
             with transaction.atomic():
@@ -796,3 +867,93 @@ def stock_entry_scanner(request):
         return redirect('products:stock_entry_scanner')
         
     return render(request, 'products/stock_entry_scanner.html')
+
+
+# ---------- Código de barras: búsqueda, alta rápida y recepción por escáner ----------
+
+def _product_payload(product):
+    return {
+        'id': product.id,
+        'name': product.name,
+        'sku': product.sku or '',
+        'barcode': product.barcode or '',
+        'plu': product.plu,
+        'unit': product.unit,
+        'unit_label': product.get_unit_display(),
+        'is_discrete': product.is_discrete,
+        'price': str(product.price),
+        'cost_price': str(product.cost_price),
+        'stock': str(product.stock),
+    }
+
+
+@login_required
+def barcode_lookup(request):
+    """Resuelve un código escaneado (código de barras, SKU o etiqueta de balanza)."""
+    code = (request.GET.get('code') or '').strip()
+    result = resolve_code(code)
+    if result is None:
+        return JsonResponse({'found': False, 'code': code})
+    quantity = result['quantity']
+    return JsonResponse({
+        'found': True,
+        'code': code,
+        'source': result['source'],
+        'quantity': str(quantity) if quantity is not None else None,
+        'product': _product_payload(result['product']),
+    })
+
+
+@login_required
+@require_POST
+def product_quick_create(request):
+    """Alta rápida desde el escáner: crea el producto con el código leído ya cargado."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'error': 'Datos inválidos.'}, status=400)
+
+    name = (data.get('name') or '').strip()
+    barcode = (data.get('barcode') or '').strip() or None
+    unit = data.get('unit') or 'unidad'
+    price = parse_decimal(data.get('price'), default=None)
+    cost_price = parse_decimal(data.get('cost_price'), default=Decimal('0'))
+    if not name:
+        return JsonResponse({'error': 'Ingresá el nombre del producto.'}, status=400)
+    if unit not in dict(Product.UNIT_CHOICES):
+        return JsonResponse({'error': 'Unidad inválida.'}, status=400)
+    if price is None or price < 0 or cost_price is None or cost_price < 0:
+        return JsonResponse({'error': 'Precio o costo inválido.'}, status=400)
+    existing = Product.objects.filter(barcode=barcode).first() if barcode else None
+    if existing:
+        detail = ' (está desactivado: reactivalo desde Productos)' if not existing.active else ''
+        return JsonResponse({'error': f'El código {barcode} ya pertenece a "{existing.name}"{detail}.'}, status=400)
+
+    category = Category.objects.filter(pk=data.get('category_id')).first() if data.get('category_id') else None
+    product = Product(name=name, barcode=barcode, unit=unit, category=category,
+                      price=price.quantize(Decimal('0.01')), cost_price=cost_price.quantize(Decimal('0.01')),
+                      stock=Decimal('0'))
+    try:
+        product.full_clean()
+    except ValidationError as e:
+        return JsonResponse({'error': '; '.join(m for msgs in e.message_dict.values() for m in msgs)}, status=400)
+    product.save()
+    ActivityLog.objects.create(
+        user=request.user,
+        action=f"Alta rápida por escáner: {product.name} (código {barcode or 'sin código'})",
+        module="Productos",
+    )
+    return JsonResponse({'product': _product_payload(product)}, status=201)
+
+
+@login_required
+def stock_reception(request):
+    """
+    Recepción de mercadería por escáner: se arma la lista leyendo códigos y se confirma
+    una sola vez contra purchase_create (misma lógica de CPP y movimientos que la compra manual).
+    """
+    return render(request, 'products/stock_reception.html', {
+        'suppliers': Supplier.objects.order_by('name'),
+        'categories': Category.objects.order_by('name'),
+        'unit_choices': Product.UNIT_CHOICES,
+    })

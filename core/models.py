@@ -42,6 +42,17 @@ class ConfiguracionSistema(models.Model):
     logo = models.ImageField(upload_to='logos/', blank=True, null=True)
     # SPEC-INV-09 §9.1: ventana de alerta de vencimientos en el Dashboard
     dias_alerta_vencimiento = models.PositiveIntegerField(default=7, verbose_name="Días de alerta de vencimiento")
+    # Etiquetas de balanza EAN-13 (prefijo 20-29): 2X + PLU + valor (peso o importe) + dígito verificador
+    BALANZA_PESO = 'peso'
+    BALANZA_IMPORTE = 'importe'
+    BALANZA_FORMATOS = [
+        (BALANZA_PESO, 'Peso en gramos'),
+        (BALANZA_IMPORTE, 'Importe en pesos'),
+    ]
+    balanza_formato = models.CharField(max_length=10, choices=BALANZA_FORMATOS, default=BALANZA_PESO,
+                                       verbose_name="La etiqueta de la balanza trae")
+    balanza_digitos_plu = models.PositiveSmallIntegerField(choices=[(4, '4 dígitos'), (5, '5 dígitos'), (6, '6 dígitos')],
+                                                           default=5, verbose_name="Dígitos del PLU en la etiqueta")
 
     class Meta:
         verbose_name = "Configuración del Sistema"

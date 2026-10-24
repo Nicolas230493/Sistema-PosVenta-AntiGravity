@@ -7,7 +7,9 @@ from django.db.models import F, Sum, Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
 from products.models import InventoryMovement, Product, StockLoss
-from sales.models import Sale, SaleDetail
+from sales.models import Sale, SaleDetail, SalePayment
+from sales.services import CURRENT_ACCOUNT_METHOD
+from finance.services import CASH_METHOD_NAME
 from customers.models import Customer
 from django.db.models.functions import ExtractHour
 import urllib.parse
@@ -92,7 +94,7 @@ def global_search(request):
     results = []
     if len(q) >= 2:
         # Productos
-        products = Product.objects.filter(Q(name__icontains=q) | Q(sku__icontains=q))[:5]
+        products = Product.objects.filter(Q(name__icontains=q) | Q(sku__icontains=q), active=True)[:5]
         for p in products:
             results.append({
                 'title': p.name,
@@ -130,8 +132,8 @@ def dashboard_view(request):
     next_week = today + timedelta(days=7)
     
     # 1. Alertas Críticas
-    agotados = Product.objects.filter(stock__lte=0)
-    por_reponer = Product.objects.filter(stock__gt=0, stock__lte=F('min_stock'))
+    agotados = Product.objects.filter(active=True, stock__lte=0)
+    por_reponer = Product.objects.filter(active=True, stock__gt=0, stock__lte=F('min_stock'))
     # SPEC-INV-09 §9.1: vencen dentro de N días configurables o ya vencidos
     dias_alerta = ConfiguracionSistema.get_config().dias_alerta_vencimiento
     vencimientos = list(expiring_products(dias_alerta, today))
@@ -145,33 +147,40 @@ def dashboard_view(request):
         p.descuento_activo = liquidaciones.get(p.id)
 
     # 2. Resumen del Día para WhatsApp
-    sales_today = Sale.objects.filter(fecha_hora__date=today)
+    # Solo ventas concretadas: sin anuladas ni pedidos con seña pendientes
+    sales_today = Sale.objects.filter(fecha_hora__date=today, status=Sale.STATUS_COMPLETED)
     total_revenue = sales_today.aggregate(total=Sum('total_amount'))['total'] or 0
     sales_count = sales_today.count()
-    
-    # Desglose de medios de pago (Agrupado por Efectivo vs Digital)
-    pay_methods = sales_today.values('payment_method').annotate(total=Sum('total_amount'))
+
+    # Desglose por medio de pago desde los cobros reales (pagos mixtos incluidos); las ventas
+    # sin cobros detallados (anteriores a SPEC-POS-08) se toman por su medio de pago principal.
+    pay_rows = list(SalePayment.objects.filter(sale__in=sales_today).values(
+        'payment_method__name', 'payment_method__is_digital').annotate(total=Sum('amount')))
+    pay_rows += list(sales_today.filter(payments__isnull=True).values(
+        'payment_method__name', 'payment_method__is_digital').annotate(total=Sum('total_amount')))
     total_efectivo = 0
     total_digital = 0
-    pay_msg = ""
-    for p in pay_methods:
-        method = p['payment_method']
-        amount = p['total']
-        pay_msg += f"- {method}: ${amount}\n"
-        if method == 'CASH':
-            total_efectivo += amount
-        else:
-            total_digital += amount
+    total_fiado = 0
+    for row in pay_rows:
+        if row['payment_method__name'] == CASH_METHOD_NAME:
+            total_efectivo += row['total']
+        elif row['payment_method__is_digital']:
+            total_digital += row['total']
+        elif row['payment_method__name'] == CURRENT_ACCOUNT_METHOD:
+            total_fiado += row['total']
     
     # Desglose por Categoría
-    cat_sales = SaleDetail.objects.filter(sale__fecha_hora__date=today).values('product__category__name').annotate(total=Sum('subtotal'))
+    cat_sales = SaleDetail.objects.filter(sale__in=sales_today).values('product__category__name').annotate(total=Sum('subtotal'))
     cat_msg = ""
     for c in cat_sales:
         cat_name = c['product__category__name'] or "Sin Categoría"
         cat_msg += f"- {cat_name}: ${c['total']}\n"
     
     # Mermas del día
-    mermas_today = StockLoss.objects.filter(date__date=today).aggregate(total=Sum('quantity'))['total'] or 0
+    # Kilos y unidades no se suman entre sí: se informa la cantidad de bajas y su valor al costo
+    mermas_hoy = StockLoss.objects.filter(date__date=today)
+    mermas_count = mermas_hoy.count()
+    mermas_valor = sum((m.quantity * (m.unit_cost or m.product.cost_price) for m in mermas_hoy.select_related('product')), 0)
     
     # Construcción de mensaje WhatsApp estructurado
     wa_text = f"📊 *CIERRE DE CAJA - IMPULSO SMART*\n"
@@ -182,10 +191,12 @@ def dashboard_view(request):
     wa_text += f"------------------------------------------\n"
     wa_text += f"💵 *Efectivo:* ${total_efectivo}\n"
     wa_text += f"💳 *Digital:* ${total_digital}\n"
+    if total_fiado:
+        wa_text += f"📒 *Cuenta corriente:* ${total_fiado}\n"
     wa_text += f"------------------------------------------\n"
     wa_text += f"📂 *Por Categoría:*\n{cat_msg}"
     wa_text += f"------------------------------------------\n"
-    wa_text += f"⚠️ *Mermas:* {mermas_today} unidades\n"
+    wa_text += f"⚠️ *Mermas:* {mermas_count} baja{'s' if mermas_count != 1 else ''} (${mermas_valor:.2f} al costo)\n"
     
     if agotados.exists():
         wa_text += f"🚨 *Faltantes Críticos:* {', '.join([p.name for p in agotados[:5]])}\n"
@@ -197,7 +208,7 @@ def dashboard_view(request):
 
     # 3. Gráfico de Horas Pico (Histórico de 30 días para mejor promedio)
     thirty_days_ago = timezone.now() - timedelta(days=30)
-    sales_by_hour = Sale.objects.filter(fecha_hora__gte=thirty_days_ago).annotate(
+    sales_by_hour = Sale.objects.filter(fecha_hora__gte=thirty_days_ago, status=Sale.STATUS_COMPLETED).annotate(
         hour=ExtractHour('fecha_hora')
     ).values('hour').annotate(
         count=Count('id'), 
@@ -212,7 +223,7 @@ def dashboard_view(request):
 
     # 4. Contexto para el template
     last_month = today - timedelta(days=30)
-    bajas_recientes = StockLoss.objects.filter(date__gte=last_month).select_related('product').order_by('-date')
+    bajas_recientes = StockLoss.objects.filter(date__date__gte=last_month).select_related('product').order_by('-date')
 
     # SPEC-UI-12 §12.2: kilos/unidades vendidos hoy sobre stock cero (desposte no cargado).
     # Es una auditoría para el dueño / encargado: los Cajeros no la ven.

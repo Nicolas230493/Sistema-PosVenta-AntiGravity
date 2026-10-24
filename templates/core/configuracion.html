@@ -29,6 +29,18 @@
                     {{ form.dias_alerta_vencimiento }}
                     <div class="form-text">El Dashboard lista los productos que vencen dentro de este plazo o ya vencidos.</div>
                 </div>
+                <h6 class="fw-bold mt-4">Balanza con etiquetas</h6>
+                <p class="small opacity-75">Para leer en el POS las etiquetas EAN-13 que imprime la balanza (empiezan con 20 a 29). Cargá el PLU de cada producto en su ficha.</p>
+                <div class="row g-3 mb-3">
+                    <div class="col-sm-6">
+                        <label class="form-label" for="{{ form.balanza_formato.id_for_label }}">{{ form.balanza_formato.label }}</label>
+                        {{ form.balanza_formato }}
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label" for="{{ form.balanza_digitos_plu.id_for_label }}">{{ form.balanza_digitos_plu.label }}</label>
+                        {{ form.balanza_digitos_plu }}
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-primary rounded-pill px-4">Guardar Cambios</button>
             </form>
         </div>

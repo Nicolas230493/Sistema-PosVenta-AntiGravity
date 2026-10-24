@@ -28,6 +28,15 @@
             <a href="?status=success" class="btn btn-sm btn-outline-success rounded-pill px-3 {% if request.GET.status == 'success' %}active{% endif %}">
                 <i class="bi bi-check-circle me-1"></i> En Stock
             </a>
+            {% if show_inactive %}
+            <a href="{% url 'products:product_list' %}" class="btn btn-sm btn-secondary rounded-pill px-3">
+                <i class="bi bi-arrow-left me-1"></i> Volver a activos
+            </a>
+            {% elif inactive_count %}
+            <a href="?inactivos=1" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                <i class="bi bi-archive me-1"></i> Ver desactivados ({{ inactive_count }})
+            </a>
+            {% endif %}
             <a href="{% url 'products:product_list' %}" class="btn btn-sm btn-link text-body-secondary text-decoration-none">Limpiar</a>
         </div>
         <div class="col-lg-3 col-md-12 text-lg-end text-start mt-lg-0 mt-2">
@@ -172,9 +181,15 @@
                         <a href="{% url 'products:product_update' pk=product.pk %}" class="btn btn-outline-secondary btn-sm border" title="Editar">
                             <i class="bi bi-pencil text-primary"></i>
                         </a>
-                        <a href="{% url 'products:product_delete' pk=product.pk %}" class="btn btn-outline-secondary btn-sm border" title="Eliminar">
+                        {% if product.active %}
+                        <a href="{% url 'products:product_delete' pk=product.pk %}" class="btn btn-outline-secondary btn-sm border" title="Eliminar o desactivar">
                             <i class="bi bi-trash text-danger"></i>
                         </a>
+                        {% else %}
+                        <button type="submit" form="reactivate-{{ product.pk }}" class="btn btn-outline-success btn-sm border" title="Reactivar">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Reactivar
+                        </button>
+                        {% endif %}
                     </div>
                 </td>
             </tr>
@@ -190,6 +205,12 @@
     </table>
 </div>
 </form>
+{% if show_inactive %}
+{# Formularios de reactivación fuera del form de etiquetas (no se anidan formularios) #}
+{% for product in products %}
+<form id="reactivate-{{ product.pk }}" method="post" action="{% url 'products:product_reactivate' pk=product.pk %}" class="d-none">{% csrf_token %}</form>
+{% endfor %}
+{% endif %}
 
 <!-- Barra flotante de acciones (aparece al seleccionar items) -->
 <div id="floating-actions" class="fixed-bottom bg-white border-top shadow-lg p-3 d-none animate__animated animate__slideInUp">

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6">
@@ -14,6 +15,9 @@
                     <div class="mb-4 text-center">
                         <label class="form-label fw-bold text-uppercase small opacity-75">Código de Barras / SKU</label>
                         <input type="text" name="barcode" id="barcode-input" class="form-control form-control-lg border-0 bg-light text-center fw-bold fs-3" autofocus required>
+                        <button type="button" class="btn btn-outline-primary rounded-pill mt-2" id="camera-scan">
+                            <i class="bi bi-camera me-1"></i>Escanear con la cámara
+                        </button>
                     </div>
                     
                     <div class="mb-4">
@@ -32,7 +36,13 @@
             </div>
         </div>
         
-        <div class="text-center mt-4">
+        <div class="alert alert-light border-0 shadow-sm mt-4 small">
+            <i class="bi bi-boxes me-1"></i>
+            ¿Llegó un pedido completo? Usá la <a href="{% url 'products:stock_reception' %}">recepción por escáner</a>:
+            escaneás todo, cargás cantidades y costos, y se confirma una sola vez (actualiza el costo promedio).
+            Si un código no existe, ahí mismo podés darlo de alta.
+        </div>
+        <div class="text-center mt-2">
             <a href="{% url 'products:inventory_history' %}" class="btn btn-link text-body-secondary text-decoration-none small">
                 <i class="bi bi-clock-history me-1"></i> Ver historial de movimientos
             </a>
@@ -49,5 +59,16 @@
     // El input de barcode siempre tiene el foco
     const barcodeInput = document.getElementById('barcode-input');
     document.addEventListener('click', () => barcodeInput.focus());
+
+    document.getElementById('camera-scan').addEventListener('click', (event) => {
+        event.stopPropagation();
+        ImpulsoBarcode.openCamera({
+            onCode: (code) => {
+                barcodeInput.value = code;
+                document.getElementById('quantity-input').focus();
+            },
+        });
+    });
 </script>
+<script src="{% static 'js/barcode-tools.js' %}"></script>
 {% endblock %}

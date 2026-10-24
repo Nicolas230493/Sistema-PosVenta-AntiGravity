@@ -45,6 +45,9 @@
             <div class="input-group w-50 shadow-sm">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-upc-scan"></i></span>
                 <input type="text" id="sku-scanner" class="form-control border-0" placeholder="Escanear Código (Barcode/SKU)..." autofocus>
+                <button type="button" class="btn btn-outline-primary border-0" id="camera-scan" title="Escanear con la cámara">
+                    <i class="bi bi-camera me-1"></i>Cámara
+                </button>
             </div>
         </div>
         <div class="mb-3">
@@ -64,7 +67,8 @@
                             data-price="{{ product.price }}"
                             data-unit="{{ product.unit }}"
                             data-sku="{{ product.sku }}"
-                            data-barcode="{{ product.barcode|default:'' }}">
+                            data-barcode="{{ product.barcode|default:'' }}"
+                            data-plu="{{ product.plu|default_if_none:'' }}">
                             <i class="bi bi-plus-lg me-1"></i>Agregar
                         </button>
                     </div>
@@ -374,12 +378,50 @@
                     this.value = '';
                     this.classList.add('is-valid');
                     setTimeout(() => this.classList.remove('is-valid'), 500);
+                } else if (addScaleLabel(code)) {
+                    this.value = '';
+                    this.classList.add('is-valid');
+                    setTimeout(() => this.classList.remove('is-valid'), 500);
                 } else {
                     alert('Producto no encontrado: ' + code);
                     this.value = '';
                 }
             }
         }
+    });
+
+    // Etiquetas de balanza (EAN-13 que empieza con 20-29): suman el peso exacto de la etiqueta a la
+    // línea del producto (una línea por producto, como el resto del POS). Funciona sin conexión.
+    function addScaleLabel(code) {
+        if (!window.ImpulsoBarcode) return false;
+        const label = ImpulsoBarcode.parseScale(code, window.POS_SCALE_CONFIG);
+        if (!label) return false;
+        const btn = document.querySelector(`.add-to-cart[data-plu="${label.plu}"]`);
+        if (!btn) return false;
+        const unit = btn.dataset.unit;
+        const isWeighed = unit === 'kg';
+        const qty = ImpulsoBarcode.scaleQuantity(label, { price: btn.dataset.price, fractional: isWeighed });
+        if (!qty || qty <= 0) return false;
+        const existing = cart.find(item => item.id === btn.dataset.id);
+        if (existing && isWeighed) existing.weight = Math.round(((existing.weight || 0) + qty) * 1000) / 1000;
+        else if (existing) existing.qty += qty;
+        else cart.push({
+            id: btn.dataset.id, name: btn.dataset.name, price: parseFloat(btn.dataset.price),
+            qty: isWeighed ? 1 : qty, unit, weight: isWeighed ? qty : null,
+        });
+        updateCart();
+        return true;
+    }
+
+    document.getElementById('camera-scan').addEventListener('click', () => {
+        if (!window.ImpulsoBarcode) return;
+        ImpulsoBarcode.openCamera({
+            title: 'Escanear producto o etiqueta de balanza',
+            onCode: (code) => {
+                skuScanner.value = code;
+                skuScanner.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter' }));
+            },
+        });
     });
 
     document.querySelectorAll('.add-to-cart').forEach(btn => {
@@ -432,7 +474,7 @@
             list.innerHTML += `
                 <li class="list-group-item d-flex justify-content-between lh-sm">
                     <div>
-                        <h6 class="my-0">${item.name} ${promoApplied}</h6>
+                        <h6 class="my-0">${escapeHtml(item.name)} ${promoApplied}</h6>
                         <small class="text-muted">
                             ${item.unit === 'kg' ? 
                                 `<input type="number" step="0.001" value="${item.weight}" onchange="updateWeight(${index}, this.value)" class="form-control form-control-sm d-inline-block w-50"> kg` 
@@ -622,6 +664,7 @@
     renderPayments();
 </script>
 <script>
+    window.POS_SCALE_CONFIG = { pluDigits: {{ config.balanza_digitos_plu|default:5 }}, mode: "{{ config.balanza_formato|default:'peso' }}" };
     window.POS_OFFLINE_CONFIG = {
         posUrl: "{% url 'sales:pos' %}",
         swUrl: "{% url 'service_worker_root' %}",
@@ -629,5 +672,6 @@
         syncUrl: "{% url 'sales_sync' %}"
     };
 </script>
+<script src="{% static 'js/barcode-tools.js' %}"></script>
 <script src="{% static 'js/pos-offline.js' %}"></script>
 {% endblock %}

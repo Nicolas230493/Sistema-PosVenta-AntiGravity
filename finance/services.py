@@ -48,7 +48,8 @@ def session_unitemized_sales(session):
 
 
 def session_customer_payments(session):
-    payments = Payment.objects.filter(user=session.user, date__gte=session.start_date)
+    # La caja es única para el comercio: cuenta todo cobro a clientes del turno, lo registre quien lo registre
+    payments = Payment.objects.filter(date__gte=session.start_date)
     if session.end_date:
         payments = payments.filter(date__lte=session.end_date)
     return payments

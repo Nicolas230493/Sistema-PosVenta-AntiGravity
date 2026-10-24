@@ -704,3 +704,71 @@ class SaleReturnTests(TestCase):
         self.assertEqual(self.product.stock, Decimal('9'))  # 10 - 3 + 2
         self.assertEqual(self.customer.balance, Decimal('100.00'))  # 300 fiado - 200 devuelto
         self.assertEqual(InventoryMovement.objects.filter(product=self.product, movement_type__in=['IN', 'SALE_CANCEL_IN']).count(), 1)
+
+
+class ScaleLabelPosTests(TestCase):
+    """Código de barras en el POS: etiquetas de balanza y cámara (agregado, sin cambiar el escáner)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cajero_balanza', password='pass12345')
+        self.user.user_permissions.add(Permission.objects.get(codename='add_sale', content_type__app_label='sales'))
+        self.client.force_login(self.user)
+        self.cash = PaymentMethod.objects.create(name='Efectivo')
+        CashSession.objects.create(user=self.user, initial_amount=Decimal('0'))
+        self.pechuga = Product.objects.create(sku='PEC', name='Pechuga', unit='kg', price=Decimal('5200.00'),
+                                              stock=Decimal('10.000'), plu=42)
+
+    def test_pos_page_exposes_plu_scale_config_and_camera(self):
+        response = self.client.get(reverse('sales:pos'))
+
+        self.assertContains(response, 'data-plu="42"')
+        self.assertContains(response, 'POS_SCALE_CONFIG = { pluDigits: 5, mode: "peso" }')
+        self.assertContains(response, 'id="camera-scan"')
+        self.assertContains(response, 'js/barcode-tools.js')
+
+    def test_scale_weight_with_three_decimals_sells_exactly(self):
+        """Dos etiquetas (1,250 + 0,800 kg) quedan en una línea de 2,050 kg."""
+        response = self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps([{'id': self.pechuga.id, 'qty': 1, 'weight': 2.05}]),
+            'payment_method': str(self.cash.id),
+            'price_list': 'default',
+        }, headers={'X-POS-Ajax': '1'})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(Sale.objects.get().total_amount, Decimal('10660.00'))  # 2,050 kg × $5.200
+        self.pechuga.refresh_from_db()
+        self.assertEqual(self.pechuga.stock, Decimal('7.950'))
+
+    def test_duplicate_lines_of_same_product_discount_all_stock(self):
+        """Bug corregido: dos líneas del mismo producto descontaban solo la última del stock."""
+        response = self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps([
+                {'id': self.pechuga.id, 'qty': 1, 'weight': 1.25},
+                {'id': str(self.pechuga.id), 'qty': 1, 'weight': 0.8},
+            ]),
+            'payment_method': str(self.cash.id),
+            'price_list': 'default',
+        }, headers={'X-POS-Ajax': '1'})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(Sale.objects.get().total_amount, Decimal('10660.00'))
+        self.pechuga.refresh_from_db()
+        self.assertEqual(self.pechuga.stock, Decimal('7.950'))
+
+    def test_duplicate_lines_beyond_stock_create_single_correct_adjustment(self):
+        """Con stock 1 kg y dos líneas de 0,8 kg: se descuenta 1 kg y se ajusta 0,6 kg (no 0)."""
+        self.pechuga.stock = Decimal('1.000')
+        self.pechuga.save()
+        self.client.post(reverse('sales:pos'), {
+            'cart_data': json.dumps([
+                {'id': self.pechuga.id, 'qty': 1, 'weight': 0.8},
+                {'id': self.pechuga.id, 'qty': 1, 'weight': 0.8},
+            ]),
+            'payment_method': str(self.cash.id),
+            'price_list': 'default',
+        }, headers={'X-POS-Ajax': '1'})
+
+        self.pechuga.refresh_from_db()
+        self.assertEqual(self.pechuga.stock, Decimal('0.000'))
+        adjusted = sum(m.quantity for m in InventoryMovement.objects.filter(product=self.pechuga, movement_type='AUTO_ADJUST_IN'))
+        self.assertEqual(adjusted, Decimal('0.600'))

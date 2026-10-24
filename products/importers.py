@@ -10,7 +10,8 @@ from django.db import transaction
 
 from suppliers.models import Supplier
 
-from .models import Category, Product
+from .models import Category, PriceLog, Product
+from .signals import can_change_prices, get_current_user, price_change_reason
 
 ENCODINGS = ('utf-8-sig', 'utf-8', 'latin-1')
 
@@ -147,8 +148,12 @@ def _unique_sku():
             return sku
 
 
-def import_product_row(row):
-    """Crea o actualiza un producto a partir de una fila ya mapeada. Lanza ValueError si es inválida."""
+def import_product_row(row, allow_price_changes=True):
+    """
+    Crea o actualiza un producto a partir de una fila ya mapeada. Lanza ValueError si es inválida.
+    Devuelve (producto, creado, precios_omitidos): sin permiso, los precios de un producto
+    existente no se modifican y precios_omitidos es True si el archivo traía otros.
+    """
     name = _clean_text(row.get('name'))
     sku = re.sub(r'[^A-Za-z0-9]', '', _clean_text(row.get('sku')))
     barcode = _clean_text(row.get('barcode'))
@@ -194,23 +199,35 @@ def import_product_row(row):
         if not name:
             raise ValueError(f"SKU '{sku}' no existe y la fila no tiene nombre para crearlo")
         defaults.setdefault('price', Decimal('0.00'))
-        return Product.objects.create(name=name, sku=sku or _unique_sku(), **defaults), True
+        return Product.objects.create(name=name, sku=sku or _unique_sku(), **defaults), True, False
+
+    prices_skipped = False
+    if not allow_price_changes:
+        for field in ('price', 'cost_price'):
+            if field in defaults and defaults.pop(field) != getattr(product, field):
+                prices_skipped = True
 
     if name:
         product.name = name
     if sku and product.sku != sku:
         product.sku = sku
+    old_cost = product.cost_price
     for field, value in defaults.items():
         setattr(product, field, value)
-    product.save()
-    return product, False
+    product.save()  # un cambio de precio de venta queda en el historial por la señal
+    if product.cost_price != old_cost:
+        PriceLog.objects.create(product=product, old_price=old_cost, new_price=product.cost_price,
+                                price_type='COST', reason="Importación de archivo", user=get_current_user())
+    return product, False, prices_skipped
 
 
-def import_products(uploaded_file):
+def import_products(uploaded_file, user=None):
     """
     Procesa el archivo fila por fila, cada una en su propio savepoint.
-    Devuelve (creados, actualizados, advertencias).
+    Devuelve (creados, actualizados, advertencias). Si `user` no puede cambiar precios,
+    los productos existentes se actualizan sin tocar su precio ni su costo.
     """
+    allow_price_changes = can_change_prices(user)
     filename = (uploaded_file.name or '').lower()
     if filename.endswith(('.xlsx', '.xls')):
         headers, rows = read_excel_rows(uploaded_file)
@@ -222,14 +239,20 @@ def import_products(uploaded_file):
 
     created = updated = 0
     warnings = []
-    for line_number, row in rows:
-        try:
-            with transaction.atomic():
-                _, was_created = import_product_row(row)
-            if was_created:
-                created += 1
-            else:
-                updated += 1
-        except Exception as e:
-            warnings.append(f"Fila {line_number} omitida: {e}")
+    prices_skipped = 0
+    with price_change_reason("Importación de archivo"):
+        for line_number, row in rows:
+            try:
+                with transaction.atomic():
+                    _, was_created, skipped = import_product_row(row, allow_price_changes)
+                if was_created:
+                    created += 1
+                else:
+                    updated += 1
+                prices_skipped += skipped
+            except Exception as e:
+                warnings.append(f"Fila {line_number} omitida: {e}")
+    if prices_skipped:
+        warnings.append(f"{prices_skipped} producto{'s' if prices_skipped != 1 else ''} existente{'s' if prices_skipped != 1 else ''} "
+                        f"sin cambio de precio: solo el superadministrador o el dueño del negocio pueden cambiar precios.")
     return created, updated, warnings

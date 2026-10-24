@@ -29,6 +29,11 @@ class Product(models.Model):
 
     sku = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="SKU Interno")
     barcode = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True, verbose_name="Código de Barras")
+    # Código de producto (PLU) programado en la balanza: vincula sus etiquetas EAN-13 con peso/importe
+    plu = models.PositiveIntegerField(unique=True, null=True, blank=True, verbose_name="PLU de balanza",
+                                      help_text="Número del producto en la balanza que imprime etiquetas.")
+    # Un producto con historial no se borra: se desactiva y deja de ofrecerse para operar
+    active = models.BooleanField(default=True, db_index=True, verbose_name="Activo")
     name = models.CharField(max_length=200, verbose_name="Nombre")
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='unidad', verbose_name="Unidad")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name="Categoría")
