@@ -160,7 +160,13 @@ def import_product_row(row):
     defaults = {}
     for field in ('price', 'cost_price', 'stock', 'min_stock'):
         if field in row:
-            amount = parse_decimal(row.get(field))
+            amount = parse_decimal(row.get(field), default=None)
+            if amount is None:
+                # Celda vacía -> 0; texto no numérico ('PRECIO_ROTO') invalida la fila (SPEC-QA-13 §13.2)
+                raw = _clean_text(row.get(field))
+                if raw and raw != '-':
+                    raise ValueError(f"valor no numérico en '{field}': '{raw}'")
+                amount = Decimal('0')
             if amount < 0:
                 raise ValueError(f"valor negativo en '{field}'")
             defaults[field] = amount.quantize(Decimal('0.001') if field in ('stock', 'min_stock') else Decimal('0.01'))

@@ -28,19 +28,19 @@
                 </div>
                 {% endif %}
 
-                <label class="form-label fw-bold small text-uppercase opacity-75">Efectivo contado en caja</label>
+                <label class="form-label fw-bold small text-uppercase opacity-75">Efectivo Físico en Cajón ($)</label>
                 <div class="input-group mb-3">
                     <span class="input-group-text border-0 bg-light fs-5">$</span>
                     <input type="number" name="declared_cash" class="form-control form-control-lg border-0 bg-light fw-bold" required min="0" step="0.01" autofocus>
                 </div>
 
-                <label class="form-label fw-bold small text-uppercase opacity-75">Total en comprobantes (Transferencia / QR / Tarjetas)</label>
+                <label class="form-label fw-bold small text-uppercase opacity-75">Total Comprobantes Digitales / Transferencias / Tarjetas ($)</label>
                 <div class="input-group mb-3">
                     <span class="input-group-text border-0 bg-light">$</span>
                     <input type="number" name="declared_digital" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01" value="0">
                 </div>
 
-                <label class="form-label fw-bold small">Observaciones del turno</label>
+                <label class="form-label fw-bold small">Observaciones de Cierre</label>
                 <textarea name="notes" class="form-control border-0 bg-light mb-4" rows="2" placeholder="Opcional: novedades, diferencias, etc."></textarea>
 
                 <button type="submit" class="btn btn-danger w-100 rounded-pill py-3 fw-bold"
@@ -50,5 +50,10 @@
             </div>
         </form>
     </div>
+    {% if adjustments %}
+    <div class="col-lg-10 mt-4">
+        {% include 'finance/_forced_adjustments.html' %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

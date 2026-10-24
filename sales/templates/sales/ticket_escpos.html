@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ticket #{{ sale.id }}</title>
     <style>
-        /* SPEC-POS-08 §8.3: ancho fijo para impresoras térmicas ESC/POS (58mm / 80mm) */
-        @page { size: {{ width }}mm auto; margin: 0; }
+        /* SPEC-POS-08 §8.3 / SPEC-OPS-14 §14.2: ancho fijo para impresoras térmicas ESC/POS (58mm / 80mm) */
+        @page { margin: 0; size: {{ width }}mm auto; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; background: #fff; color: #000; }
         body {
@@ -27,7 +27,7 @@
         .toolbar { margin: 4mm 0; display: flex; gap: 2mm; }
         .toolbar button { flex: 1; padding: 2mm; font: inherit; cursor: pointer; }
         @media print {
-            .toolbar { display: none !important; }
+            .no-print { display: none !important; }
             body { width: {{ width }}mm; }
         }
     </style>
@@ -81,7 +81,7 @@
     <div class="sep"></div>
     <div class="center">¡Gracias por su compra!</div>
 
-    <div class="toolbar">
+    <div class="toolbar no-print">
         <button type="button" onclick="window.print()">Imprimir</button>
         <button type="button" onclick="window.close()">Cerrar</button>
     </div>

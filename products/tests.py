@@ -125,6 +125,59 @@ class CsvImporterTests(TestCase):
         warnings = [str(m) for m in response.context['messages']]
         self.assertTrue(any(w.startswith('Fila 3 omitida') for w in warnings))
 
+    def test_stress_latin1_csv_with_broken_price_is_isolated(self):
+        """SPEC-QA-13 §13.2: latin-1, ';', '$ 4.500,50' y una fila con 'PRECIO_ROTO' en el medio."""
+        csv_text = (
+            "Código;Nombre;Precio Venta;Precio Costo;Stock;Unidad;Categoría\n"
+            "PECH1;Pechuga de Pollo Ñandú;$ 4.500,50;$ 3.100,25;12,750;kg;Pollería\n"
+            "ROTO1;Pata Muslo Señorial;PRECIO_ROTO;$ 2.000,00;5;kg;Pollería\n"
+            "ALIT1;Alitas Campiñas;$ 2.999,99;$ 1.800,10;0,000;kg;Pollería\n"
+        )
+        response = self._upload(csv_text, encoding='latin-1')
+
+        # Post/Redirect/Get: el POST responde 302 al listado (nunca 500) y la página final 200
+        self.assertEqual(response.redirect_chain, [(reverse('products:product_list'), 302)])
+        self.assertEqual(response.status_code, 200)
+        pechuga = Product.objects.get(sku='PECH1')
+        self.assertEqual(pechuga.name, 'Pechuga de Pollo Ñandú')
+        self.assertEqual(pechuga.price, Decimal('4500.50'))
+        self.assertEqual(pechuga.cost_price, Decimal('3100.25'))
+        self.assertEqual(pechuga.stock, Decimal('12.750'))
+        self.assertEqual(pechuga.unit, 'kg')
+        self.assertEqual(pechuga.category.name, 'Pollería')
+        alitas = Product.objects.get(sku='ALIT1')
+        self.assertEqual(alitas.name, 'Alitas Campiñas')
+        self.assertEqual(alitas.price, Decimal('2999.99'))
+        self.assertEqual(alitas.stock, Decimal('0.000'))
+
+        self.assertFalse(Product.objects.filter(sku='ROTO1').exists())
+        warnings = [str(m) for m in response.context['messages']]
+        self.assertTrue(any(w.startswith('Fila 3 omitida') and 'PRECIO_ROTO' in w for w in warnings))
+        self.assertEqual(sum(w.startswith('Fila') for w in warnings), 1)
+        self.assertTrue(any('2 productos creados' in w for w in warnings))
+
+    def test_inventory_history_filters_forced_adjustments_by_day(self):
+        """SPEC-UI-12 §12.2: historial filtrado por AUTO_ADJUST_IN del día con total por producto."""
+        alitas = Product.objects.create(sku='ALI', name='Alitas', unit='kg', price=Decimal('3000'))
+        InventoryMovement.objects.create(product=alitas, quantity=Decimal('1.250'), movement_type='AUTO_ADJUST_IN', reference='Venta #1')
+        InventoryMovement.objects.create(product=alitas, quantity=Decimal('0.750'), movement_type='AUTO_ADJUST_IN', reference='Venta #2')
+        InventoryMovement.objects.create(product=alitas, quantity=Decimal('2.000'), movement_type='OUT', reference='Venta #2')
+
+        from django.utils import timezone
+        response = self.client.get(reverse('products:inventory_history'), {
+            'movement_type': 'AUTO_ADJUST_IN', 'date': timezone.localdate().isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['movements']), 2)
+        totals = list(response.context['product_totals'])
+        self.assertEqual(totals[0]['total'], Decimal('2.000'))
+
+        # Tipo inválido o fecha inexistente: se ignoran sin error
+        response = self.client.get(reverse('products:inventory_history'), {'movement_type': 'X', 'date': '2026-02-31'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['movements']), 3)
+
     def test_comma_csv_updates_existing_product_by_sku(self):
         Product.objects.create(sku='ABC1', name='Huevos', price=Decimal('10'))
 

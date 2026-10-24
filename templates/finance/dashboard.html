@@ -3,7 +3,8 @@
 {% block page_title %}Control de Caja y Rentabilidad{% endblock %}
 
 {% block content %}
-<!-- Estadísticas de Rentabilidad (Utilidad Bruta) -->
+<!-- Estadísticas de Rentabilidad (Utilidad Bruta): solo Administrador -->
+{% if profit_stats %}
 <div class="d-flex justify-content-end mb-2">
     <a href="{% url 'finance:profit_report' %}" class="btn btn-sm btn-outline-primary rounded-pill">
         <i class="bi bi-calculator me-1"></i>Ganancia Neta Real
@@ -55,6 +56,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <div class="row">
     <!-- Estado de Caja -->
@@ -80,6 +82,15 @@
                         <span>Monto Inicial:</span>
                         <span class="fw-bold">${{ session.initial_amount }}</span>
                     </div>
+                    {% if blind %}
+                    <div class="d-flex justify-content-between mb-2 text-danger">
+                        <span>Egresos Manuales (-):</span>
+                        <span class="fw-bold">${{ session.total_expenses }}</span>
+                    </div>
+                    <div class="alert alert-info border-0 small mb-3">
+                        <i class="bi bi-eye-slash me-1"></i><strong>Arqueo ciego:</strong> el efectivo esperado se informa recién al cerrar la caja.
+                    </div>
+                    {% else %}
                     <div class="d-flex justify-content-between mb-2 text-success">
                         <span>Ventas Efectivo (+):</span>
                         <span class="fw-bold">${{ session.total_sales_cash }}</span>
@@ -93,6 +104,7 @@
                         <span>Esperado en Caja:</span>
                         <span class="text-primary">${{ session.expected_final_amount }}</span>
                     </div>
+                    {% endif %}
 
                     {% if other_payments %}
                     <div class="bg-light p-3 rounded-3 mt-3">
@@ -129,9 +141,11 @@
                     </div>
                     {% endif %}
 
+                    {% if not blind %}
                     <a href="{% url 'finance:export_cash_report' pk=session.pk %}" target="_blank" class="btn btn-outline-primary w-100 rounded-pill mt-3 btn-sm">
                         <i class="bi bi-file-earmark-pdf me-1"></i>Reporte Parcial (X)
                     </a>
+                    {% endif %}
                 </div>
             </div>
 

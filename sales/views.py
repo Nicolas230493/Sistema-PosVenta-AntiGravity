@@ -14,6 +14,10 @@ from .services import (
     sale_current_account_amount,
 )
 from django.conf import settings
+from django.middleware.csrf import get_token
+from django.templatetags.static import static
+from django.urls import reverse
+from core.models import ConfiguracionSistema
 from django.utils import timezone
 
 from .utils import generate_sale_pdf, generate_thermal_ticket, generate_total_sales_report
@@ -134,7 +138,11 @@ def pos_view(request):
 
 @login_required
 def pos_catalog(request):
-    """Catálogo JSON para la copia local (IndexedDB) del POS offline."""
+    """
+    Catálogo JSON para la copia local (IndexedDB) del POS offline.
+    Incluye un token CSRF vigente: si el POS se abrió desde la copia en caché (con el token de
+    una sesión anterior), pos-offline.js lo reemplaza antes de enviar ventas o sincronizar.
+    """
     products = [
         {
             'id': p.id,
@@ -148,7 +156,13 @@ def pos_catalog(request):
         }
         for p in Product.objects.all().order_by('name')
     ]
-    return JsonResponse({'generated_at': timezone.now().isoformat(), 'products': products})
+    response = JsonResponse({
+        'generated_at': timezone.now().isoformat(),
+        'csrf_token': get_token(request),
+        'products': products,
+    })
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 @login_required
@@ -182,7 +196,7 @@ def sync_sales(request):
         try:
             sale, created = create_sale(
                 user=request.user,
-                cart=entry.get('cart'),
+                cart=entry.get('items') or entry.get('cart'),  # SPEC-PWA-11: 'items' (cola nueva) o 'cart'
                 customer_id=entry.get('customer_id'),
                 payment_method_id=entry.get('payment_method_id') or entry.get('payment_method'),
                 payments=entry.get('payments'),
@@ -205,12 +219,49 @@ def sync_sales(request):
     return JsonResponse({'results': results})
 
 
-@login_required
 def service_worker(request):
-    """Sirve el Service Worker con alcance /pos/ (debe vivir bajo esa ruta)."""
+    """
+    SPEC-PWA-11 §11.1: Service Worker servido desde la raíz (/sw.js) con alcance '/'.
+    Es público (no contiene datos) para que el navegador pueda buscar actualizaciones
+    aunque la sesión haya expirado. /pos/sw.js sigue respondiendo para instalaciones previas.
+    """
     sw_path = settings.BASE_DIR / 'static' / 'js' / 'pos-sw.js'
-    response = HttpResponse(sw_path.read_text(encoding='utf-8'), content_type='application/javascript')
+    script = sw_path.read_text(encoding='utf-8')
+    if settings.DEBUG:
+        # Sin hash en los estáticos: los archivos propios van network-first para ver cambios al instante
+        script = script.replace('const DEV_MODE = false;', 'const DEV_MODE = true;', 1)
+    response = HttpResponse(script, content_type='application/javascript')
     response['Cache-Control'] = 'no-cache'
+    response['Service-Worker-Allowed'] = '/'
+    return response
+
+
+def web_manifest(request):
+    """SPEC-PWA-11 §11.1: manifiesto de la PWA en /manifest.json (instalable, abre directo en el POS)."""
+    config = ConfiguracionSistema.get_config()
+    name = config.nombre_empresa or 'Impulso Smart POS'
+    manifest = {
+        'name': name,
+        'short_name': name[:12],
+        'description': 'Punto de venta con operación sin conexión',
+        'start_url': reverse('sales:pos'),
+        'scope': '/',
+        'display': 'standalone',
+        'orientation': 'any',
+        'background_color': '#f4f7fe',
+        'theme_color': '#4318ff',
+        'lang': 'es',
+        'icons': [{
+            'src': static('img/pos-icon.svg'),
+            'sizes': 'any',
+            'type': 'image/svg+xml',
+            'purpose': 'any',
+        }],
+    }
+    response = JsonResponse(manifest, json_dumps_params={'ensure_ascii': False})
+    response['Content-Type'] = 'application/manifest+json'
+    response['Cache-Control'] = 'no-cache'
+    response['Service-Worker-Allowed'] = '/'
     return response
 
 @login_required
@@ -219,7 +270,8 @@ def ticket_escpos(request, pk):
     sale = get_object_or_404(
         Sale.objects.select_related('customer', 'user'), pk=pk
     )
-    width = '58' if request.GET.get('w') == '58' else '80'
+    # SPEC-OPS-14 §14.2: ?width=58 (también se acepta el parámetro corto ?w=58)
+    width = '58' if (request.GET.get('width') or request.GET.get('w')) == '58' else '80'
     return render(request, 'sales/ticket_escpos.html', {
         'sale': sale,
         'details': sale.details.select_related('product'),

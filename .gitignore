@@ -152,8 +152,9 @@ cython_debug/
 *.swp
 *.swo
 
-# Django collectstatic
-staticfiles/
+# Django collectstatic (SPEC-OPS-14: el directorio se versiona vacío para que WhiteNoise no advierta)
+staticfiles/*
+!staticfiles/.gitkeep
 
 # Backups de editores
 *~

@@ -14,7 +14,7 @@ import pandas as pd
 from decimal import Decimal, InvalidOperation
 
 import csv
-from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail, LOSS_REASONS
+from .models import Product, InventoryMovement, Category, StockLoss, Purchase, PurchaseDetail, PurchaseOrder, PurchaseOrderDetail, LOSS_REASONS, MOVEMENT_TYPES
 from .forms import ProductForm, InventoryMovementForm, CategoryForm, StockAdjustmentForm
 from .importers import import_products, parse_decimal
 from .services import DEFAULT_COVERAGE_DAYS, purchase_suggestions
@@ -495,8 +495,33 @@ def supplier_ranking(request):
 
 @login_required
 def inventory_history(request):
-    movements = InventoryMovement.objects.select_related('product', 'user').all()
-    return render(request, 'products/inventory_history.html', {'movements': movements})
+    """Kardex general. SPEC-UI-12 §12.2: filtros por tipo (?movement_type=AUTO_ADJUST_IN) y día (?date=AAAA-MM-DD)."""
+    movements = InventoryMovement.objects.select_related('product', 'user').order_by('-date')
+    movement_type = request.GET.get('movement_type', '')
+    if movement_type not in dict(MOVEMENT_TYPES):
+        movement_type = ''
+    try:
+        day = parse_date(request.GET.get('date') or '')
+    except ValueError:  # formato válido pero fecha inexistente (2026-02-31)
+        day = None
+    if movement_type:
+        movements = movements.filter(movement_type=movement_type)
+    if day:
+        movements = movements.filter(date__date=day)
+
+    # Total por producto cuando se audita un tipo puntual (p. ej. kilos vendidos sobre stock cero)
+    product_totals = []
+    if movement_type:
+        product_totals = movements.values('product__name', 'product__unit').annotate(
+            total=Sum('quantity'), count=Count('id')
+        ).order_by('-total')
+    return render(request, 'products/inventory_history.html', {
+        'movements': movements,
+        'movement_types': MOVEMENT_TYPES,
+        'movement_type': movement_type,
+        'day': day,
+        'product_totals': product_totals,
+    })
 
 def _filter_inventory_queryset(request):
     status_filter = request.GET.get('status')

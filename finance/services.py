@@ -129,7 +129,7 @@ def session_forced_adjustments(session):
     sales = {f"Venta #{sale_id}": sale_id for sale_id in session_sales(session).values_list('id', flat=True)}
     movements = InventoryMovement.objects.filter(
         movement_type='AUTO_ADJUST_IN', reference__in=list(sales)
-    ).select_related('product').order_by('date')
+    ).select_related('product', 'user').order_by('date')
 
     prices = {
         (row['sale_id'], row['product_id']): row['price']
@@ -150,6 +150,7 @@ def session_forced_adjustments(session):
             'quantity': mov.quantity,
             'unit_price': price,
             'amount': amount,
+            'user': mov.user.username if mov.user else '-',
         })
     return rows, total_amount
 

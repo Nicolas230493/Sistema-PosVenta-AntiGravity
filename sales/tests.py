@@ -350,6 +350,58 @@ class OfflineSyncTests(TestCase):
         sw = self.client.get(reverse('sales:service_worker'))
         self.assertEqual(sw['Content-Type'], 'application/javascript')
 
+    def test_service_worker_and_manifest_served_from_root(self):
+        """SPEC-PWA-11 §11.1: /sw.js y /manifest.json en la raíz con Service-Worker-Allowed: /."""
+        self.client.logout()  # deben responder aunque la sesión haya expirado
+
+        sw = self.client.get('/sw.js')
+        self.assertEqual(sw.status_code, 200)
+        self.assertEqual(sw['Content-Type'], 'application/javascript')
+        self.assertEqual(sw['Service-Worker-Allowed'], '/')
+        self.assertIn(b'/pos/api/catalog/', sw.content)
+
+        manifest = self.client.get('/manifest.json')
+        self.assertEqual(manifest.status_code, 200)
+        self.assertEqual(manifest['Service-Worker-Allowed'], '/')
+        self.assertIn('application/manifest+json', manifest['Content-Type'])
+        data = json.loads(manifest.content)
+        self.assertEqual(data['start_url'], reverse('sales:pos'))
+        self.assertEqual(data['scope'], '/')
+        self.assertTrue(data['icons'])
+
+    def test_catalog_returns_current_csrf_token(self):
+        """El POS abierto desde la caché renueva su token CSRF con el catálogo."""
+        response = self.client.get(reverse('sales:pos_catalog'))
+
+        self.assertTrue(response.json()['csrf_token'])
+        self.assertEqual(response['Cache-Control'], 'no-store')
+
+    def test_service_worker_dev_mode_follows_debug(self):
+        from django.test import override_settings
+        self.assertIn(b'const DEV_MODE = false;', self.client.get('/sw.js').content)
+        with override_settings(DEBUG=True):
+            self.assertIn(b'const DEV_MODE = true;', self.client.get('/sw.js').content)
+
+    def test_pos_page_wires_root_service_worker_and_status_badge(self):
+        """SPEC-PWA-11 §11.2: el POS registra /sw.js y muestra el semáforo en la barra superior."""
+        response = self.client.get(reverse('sales:pos'))
+
+        self.assertContains(response, 'swUrl: "/sw.js"')
+        self.assertContains(response, 'id="pos-net-badge"')
+        self.assertContains(response, 'id="pos-sync-now"')
+        self.assertContains(response, 'rel="manifest" href="/manifest.json"')
+
+    def test_sync_accepts_items_key_from_indexeddb_queue(self):
+        """SPEC-PWA-11 §11.2: la cola de IndexedDB guarda 'items' (antes 'cart')."""
+        sale = self._offline_sale('44444444-4444-4444-8444-444444444444')
+        sale['items'] = sale.pop('cart')
+        sale['total_amount'] = '4500.00'
+
+        results = self._sync([sale]).json()['results']
+
+        self.assertEqual(results[0]['status'], 'created')
+        self.assertEqual(Sale.objects.get().total_amount, Decimal('4500.00'))
+
     def test_sale_cancellation_reverts_stock_with_sale_cancel_in(self):
         from sales.services import cancel_sale
         # Venta de producto con stock inicial
@@ -606,6 +658,21 @@ class MixedPaymentAndReservationTests(TestCase):
         self.assertIn('window.print()', content)
         self.assertIn('Transferencia', content)
         self.assertIn('@media print', content)
+
+    def test_escpos_ticket_width_param_and_print_css(self):
+        """SPEC-OPS-14 §14.2: @page 80mm por defecto, ?width=58, monoespaciada y .no-print."""
+        self._post([{'method_id': self.cash.id, 'amount': '5000'}])
+        url = reverse('sales:ticket_escpos', args=[Sale.objects.get().id])
+
+        default = self.client.get(url).content.decode()
+        narrow = self.client.get(url, {'width': '58'}).content.decode()
+
+        self.assertIn('@page { margin: 0; size: 80mm auto; }', default)
+        self.assertIn('@page { margin: 0; size: 58mm auto; }', narrow)
+        self.assertIn('"Courier New", Courier, monospace', default)
+        self.assertIn('.no-print { display: none !important; }', default)
+        self.assertIn('class="toolbar no-print"', default)
+        self.assertNotIn('<img', default)
 
 
 class SaleReturnTests(TestCase):

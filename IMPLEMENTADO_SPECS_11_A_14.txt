@@ -1,0 +1,139 @@
+IMPLEMENTACIÓN SPECS 11 A 14 — Impulso Smart POS
+Fecha: 24/10/2026
+Estado: implementado, revisado y testeado (119 tests OK: 104 previos + 15 nuevos).
+        `manage.py check`, `makemigrations --check` y `collectstatic` sin problemas.
+        Sin migraciones nuevas.
+
+======================================================================
+1. SPEC-PWA-11 — PWA, IndexedDB y semáforo de conexión
+======================================================================
+Service Worker y manifiesto (sales/views.py, pos_system/urls.py)
+- /sw.js y /manifest.json servidos desde la raíz con
+  Service-Worker-Allowed: /. Ambos son públicos (no contienen datos), para que
+  el navegador pueda actualizar el SW aunque la sesión haya expirado.
+- /pos/sw.js sigue respondiendo (instalaciones previas); pos-offline.js
+  da de baja los registros viejos con alcance /pos/ y registra /sw.js ('/').
+- Manifiesto: nombre de la empresa (Configuración), start_url /pos/,
+  display standalone, ícono static/img/pos-icon.svg. <link rel="manifest">
+  y theme-color en base.html.
+
+Estrategias de caché (static/js/pos-sw.js, caché impulso-pos-v3)
+- HTML del POS (/pos/): network-first con límite de 4 s y respaldo en caché.
+  DESVÍO CONSCIENTE de la spec (que pide SWR/Cache-First): el HTML lleva el
+  token CSRF, la caja abierta y los precios del día; no se sirve viejo si
+  hay red. Las respuestas con mensajes o ticket pendiente no se guardan.
+- CSS / JS (incluido pos-offline.js) / fuentes pedidos por la pantalla del
+  POS: stale-while-revalidate. El resto de las pantallas no usan esta caché.
+  Con DEBUG=True la vista inyecta DEV_MODE y los archivos propios van
+  network-first (en producción llevan hash por ManifestStaticFilesStorage).
+- Catálogo (/pos/api/catalog/): network-first con respaldo en caché.
+  NOTA: la spec dice /api/catalog/; se mantuvo la ruta existente. No existe
+  ruta /sales/ (el POS vive en /pos/).
+
+IndexedDB (static/js/pos-offline.js)
+- Base "ImpulsoPOS_DB":
+  · catalog_cache: id, name, sku, barcode, unit, price, stock, category_id.
+  · offline_sales_queue: client_uuid, created_at, items, payments,
+    total_amount (+ customer_id, price_list, descuentos, status).
+- Migración automática: las ventas pendientes de la base anterior
+  "impulso-pos" se copian a la nueva y luego se borra la vieja. No se
+  pierden ventas de equipos que ya usaban el POS offline.
+- Con un único medio de pago la cola guarda payments igual, pero al servidor
+  se envía solo el método (single_payment): el servidor cobra el total que
+  calcula (promos solo del lado servidor). total_amount es informativo; el
+  servidor siempre recalcula.
+- /api/sales/sync/ acepta "items" (cola nueva) o "cart" (cola vieja).
+
+Semáforo en la barra superior (base.html: bloque topbar_status; pos.html)
+- Online: "Conectado" (discreto, verde).
+- Offline: "Modo Sin Conexión (Operando en Local)" (amarillo).
+- Pendientes: "X ventas por sincronizar" + botón "Sincronizar ahora".
+- Sincronización automática al volver la conexión y cada 30 s, en lotes de 50.
+- Alerta roja con el motivo cuando falla: venta rechazada por el servidor,
+  sesión vencida, 403 o error del servidor (antes fallaba en silencio).
+
+Token CSRF de la página en caché (corrección de la revisión)
+- El catálogo devuelve un csrf_token vigente (Cache-Control: no-store);
+  al abrir el POS se actualiza el catálogo ANTES de sincronizar.
+- Venta con 403: se pide token nuevo y se reintenta una vez con el mismo
+  client_uuid (no duplica). Sin respuesta del servidor -> se guarda offline.
+  Si el token ya era el vigente, el 403 es de permisos: se avisa y NO se
+  encola (quedaría trabada para siempre).
+
+======================================================================
+2. SPEC-UI-12 — Arqueo ciego y Ajustes Forzosos de Desposte
+======================================================================
+Arqueo ciego (core/decorators.py: es_arqueo_ciego, finance/views.py)
+- CAMBIO DE COMPORTAMIENTO: solo Superuser y grupo Administrador(es) ven el
+  esperado. Cajeros, Encargados y usuarios is_staff sin grupo declaran a
+  ciegas (antes solo los Cajeros).
+- Pantalla de cierre: "Efectivo Físico en Cajón ($)", "Total Comprobantes
+  Digitales / Transferencias / Tarjetas ($)", "Observaciones de Cierre"
+  (también en el modal de cierre del POS). El esperado no se incluye en el
+  HTML para quien cierra a ciegas.
+- Con la caja ABIERTA, quien no es Administrador tampoco ve el esperado ni
+  sus componentes en otras pantallas:
+  · /finance/: se ocultan Esperado, Ventas Efectivo, Otros Medios y las
+    tarjetas de Ventas/Costo/Utilidad del día (solo Administrador).
+  · Reporte del turno abierto: sin ingresos, esperado ni cobros por medio.
+  · PDF "Reporte X" y WhatsApp de la caja abierta: bloqueados con mensaje.
+  Tras el cierre, el Encargado ve el reporte completo.
+- Límite conocido: el Historial de Ventas sigue mostrando los importes de
+  cada venta (se podría sumar a mano). Fuera del alcance de la spec.
+
+Ajustes Forzosos
+- Parcial templates/finance/_forced_adjustments.html con las columnas
+  Hora | Producto | Kilos/Unid. Ajustados | Valorizado ($) | Cajero
+  (debajo del producto: venta y precio unitario). Se usa en la pantalla de
+  cierre y en el reporte del turno. session_forced_adjustments devuelve el
+  usuario del movimiento.
+- Dashboard: tarjeta "Ajustes Forzosos de Desposte (hoy)" con kilos por
+  producto y botón "Ver historial" (solo Encargado / Administrador).
+- Historial de inventario: filtros ?movement_type=...&date=AAAA-MM-DD, con
+  total por producto cuando se filtra por tipo. Tipo o fecha inválidos se
+  ignoran sin error.
+
+======================================================================
+3. SPEC-QA-13 — Pruebas de integración y stress CSV
+======================================================================
+- core/tests_e2e.py "Día Completo en Pollería" (por las URLs reales):
+  apertura $10.000 -> 2 compras (CPP $2.250/kg, stock 20.000) -> venta
+  1.500 kg mitad efectivo / mitad transferencia -> 2.000 kg de Alitas sin
+  stock (AUTO_ADJUST_IN 2.000, stock 0.000) -> sync con client_uuid
+  duplicado en el lote y reenviado (1 sola venta) -> gasto $500 -> cierre
+  ciego declarando $100 menos (esperado 22.500, faltante -100) ->
+  Ganancia Neta 16.000 - 8.625 - 500 - 0 = $6.875 (servicio y pantalla).
+- products/tests.py: CSV latin-1, ';', "Pechuga de Pollo Ñandú",
+  "$ 4.500,50" y fila "PRECIO_ROTO" en el medio. El POST responde 302 al
+  listado (Post/Redirect/Get, nunca 500) y la página final 200.
+- ERROR CORREGIDO en products/importers.py: texto no numérico en precio,
+  costo, stock o stock mínimo se importaba en silencio como 0. Ahora la fila
+  se omite con la advertencia "valor no numérico en 'price': 'PRECIO_ROTO'".
+  Celdas vacías o "-" siguen tomándose como 0.
+
+======================================================================
+4. SPEC-OPS-14 — Estáticos y ticket térmico
+======================================================================
+- STATIC_ROOT / STATICFILES_DIRS ya estaban configurados; build.sh ya corre
+  collectstatic. Se versiona staticfiles/.gitkeep (.gitignore:
+  staticfiles/* + !staticfiles/.gitkeep): elimina el UserWarning "No
+  directory at staticfiles/" de WhiteNoise (verificado con y sin carpeta).
+- Ticket ESC/POS: @page { margin: 0; size: 80mm auto; }, ?width=58 (se
+  sigue aceptando ?w=58), Courier New monoespaciada, sin imágenes,
+  @media print { .no-print { display: none !important; } }.
+- Chart.js fijado en 4.6.1 (la versión que el CDN entregaba sin versión).
+
+======================================================================
+TESTS AJUSTADOS POR CAMBIO DE COMPORTAMIENTO
+======================================================================
+- finance: el PDF de caja abierta del test de KeyError se genera ahora como
+  Administrador (un is_staff sin grupo hace arqueo ciego).
+
+======================================================================
+PENDIENTE / A REVISAR
+======================================================================
+- Probar en el navegador (solo se verificó sintaxis JS y tests de Django):
+  DevTools > Network > Offline, vender, volver a Online y ver que se
+  sincronice; instalar la PWA; imprimir el ticket en 58 y 80 mm.
+- Advertencia previa (no de estas specs): el Dashboard filtra
+  StockLoss.date con una fecha naive (RuntimeWarning en los tests).

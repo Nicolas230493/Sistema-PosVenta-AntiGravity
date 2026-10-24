@@ -12,7 +12,7 @@ from sales.models import Sale, SaleDetail
 from products.models import Purchase
 
 from django.http import HttpResponse
-from core.decorators import es_cajero_ciego, es_encargado_o_admin
+from core.decorators import es_arqueo_ciego, es_encargado_o_admin
 from .services import (
     CashError, close_session, difference_label, net_profit, payment_method_summary,
     refresh_session_totals, session_customer_payments, session_forced_adjustments,
@@ -22,9 +22,21 @@ from .utils import generate_cash_report_pdf
 from datetime import datetime, time, timedelta
 import urllib.parse
 
+def _blind_open_session(user, session):
+    """SPEC-UI-12 §12.1: mientras la caja está abierta, quien no es Administrador no ve el esperado."""
+    return session.is_open and es_arqueo_ciego(user)
+
+
+def _deny_blind_report(request):
+    messages.error(request, "Arqueo ciego: el reporte de la caja abierta solo lo ve el Administrador. Estará disponible al cerrar.")
+    return redirect('finance:cash_dashboard')
+
+
 @manager_required
 def export_cash_report(request, pk):
     session = get_object_or_404(CashSession, pk=pk)
+    if _blind_open_session(request.user, session):
+        return _deny_blind_report(request)
 
     payments_summary = session_customer_payments(session).values('payment_method__name').annotate(total=models.Sum('amount'))
     expenses = session.expenses.all()
@@ -48,10 +60,12 @@ def cash_session_report(request, pk):
         with transaction.atomic():
             refresh_session_totals(session)
     adjustments, adjustments_total = session_forced_adjustments(session)
+    blind = _blind_open_session(request.user, session)
     return render(request, 'finance/session_report.html', {
         'session': session,
+        'blind': blind,
         'difference_label': difference_label(session.difference),
-        'payment_summary': payment_method_summary(session),
+        'payment_summary': [] if blind else payment_method_summary(session),
         'expenses': session.expenses.all(),
         'adjustments': adjustments,
         'adjustments_total': adjustments_total,
@@ -78,6 +92,10 @@ def cash_dashboard(request):
     gross_profit = total_revenue - total_cost
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
 
+    # SPEC-UI-12 §12.1: el Encargado opera la caja a ciegas. No recibe el esperado ni sus
+    # componentes (ventas en efectivo/digitales del turno, ventas del día) para no poder deducirlo.
+    blind = es_arqueo_ciego(request.user)
+
     other_payments = []
     stock_summary = []
     adjustments = []
@@ -85,10 +103,12 @@ def cash_dashboard(request):
         with transaction.atomic():
             refresh_session_totals(active_session)
 
+    if active_session and not blind:
         other_payments = [
             row for row in payment_method_summary(active_session)
             if row['payment_method__name'] not in ('Efectivo', 'Cuenta Corriente')
         ]
+    if active_session:
         stock_summary = session_stock_summary(active_session)
         adjustments, _ = session_forced_adjustments(active_session)
 
@@ -99,7 +119,9 @@ def cash_dashboard(request):
         'other_payments': other_payments,
         'stock_summary': stock_summary,
         'forced_adjustments': adjustments,
-        'profit_stats': {
+        'blind': blind,
+        # Utilidad bruta del día: solo Administrador (misma política que el middleware de roles)
+        'profit_stats': None if blind else {
             'revenue': total_revenue,
             'cost': total_cost,
             'profit': gross_profit,
@@ -169,11 +191,12 @@ def _parse_amount(value, label):
 @login_required
 def close_cash(request):
     """
-    SPEC-FIN-06 §6.1 — Cierre ciego: los Cajeros no ven el efectivo esperado;
-    declaran lo contado y el servidor calcula esperado y diferencia en el POST.
+    SPEC-FIN-06 §6.1 / SPEC-UI-12 §12.1 — Cierre ciego: quien no es Administrador no ve el
+    efectivo esperado (ni siquiera en el HTML); declara lo contado y el servidor calcula
+    esperado y diferencia en el POST.
     """
     session = CashSession.get_active()
-    blind = es_cajero_ciego(request.user)
+    blind = es_arqueo_ciego(request.user)
 
     if request.method == 'POST':
         try:
@@ -208,7 +231,14 @@ def close_cash(request):
         messages.info(request, "No hay una caja abierta.")
         return redirect('dashboard')
 
-    context = {'session': session, 'blind': blind, 'next': _safe_next(request, '')}
+    adjustments, adjustments_total = session_forced_adjustments(session)
+    context = {
+        'session': session,
+        'blind': blind,
+        'next': _safe_next(request, ''),
+        'adjustments': adjustments,
+        'adjustments_total': adjustments_total,
+    }
     if not blind:
         with transaction.atomic():
             context['expected'] = refresh_session_totals(session)
@@ -302,6 +332,8 @@ def fiscal_reports(request):
 @manager_required
 def whatsapp_report(request, pk):
     session = get_object_or_404(CashSession, pk=pk)
+    if _blind_open_session(request.user, session):
+        return _deny_blind_report(request)
     fecha = timezone.localtime(session.end_date).strftime('%d/%m/%Y') if session.end_date else timezone.localdate().strftime('%d/%m/%Y')
     efectivo = session.declared_cash if session.declared_cash is not None else (session.real_final_amount or Decimal('0.00'))
     digital = session.declared_digital if session.declared_digital is not None else session.total_sales_digital

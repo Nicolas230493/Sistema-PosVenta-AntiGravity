@@ -14,7 +14,42 @@
             </a>
         </div>
     </div>
+    <!-- SPEC-UI-12 §12.2: filtros de auditoría -->
+    <form method="get" class="row g-2 align-items-end mt-2">
+        <div class="col-sm-5 col-md-4">
+            <label class="form-label small fw-bold mb-1">Tipo de movimiento</label>
+            <select name="movement_type" class="form-select form-select-sm">
+                <option value="">Todos</option>
+                {% for value, label in movement_types %}
+                <option value="{{ value }}" {% if value == movement_type %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label small fw-bold mb-1">Día</label>
+            <input type="date" name="date" class="form-control form-control-sm" value="{{ day|date:'Y-m-d' }}">
+        </div>
+        <div class="col-sm-3 col-md-auto d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
+            {% if movement_type or day %}<a href="{% url 'products:inventory_history' %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">Limpiar</a>{% endif %}
+        </div>
+    </form>
 </div>
+
+{% if product_totals %}
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-2">Total por producto{% if day %} — {{ day|date:"d/m/Y" }}{% endif %}</h6>
+        <div class="d-flex flex-wrap gap-2">
+            {% for row in product_totals %}
+            <span class="badge bg-primary-subtle text-primary-emphasis rounded-pill px-3 py-2">
+                {{ row.product__name }}: {{ row.total|floatformat:"-3" }} {{ row.product__unit }} <span class="opacity-75">({{ row.count }} mov.)</span>
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="table-container shadow-sm overflow-hidden rounded-4">
     <table class="table table-hover align-middle mb-0">

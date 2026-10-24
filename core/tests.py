@@ -144,3 +144,42 @@ class ExpiryAlertTests(TestCase):
         self.client.post(reverse('apply_expiry_discount', args=[self.pronto.id]), {'percent': '30'})
 
         self.assertFalse(Promotion.objects.exists())
+
+
+class ForcedAdjustmentsDashboardTests(TestCase):
+    """SPEC-UI-12 §12.2: acceso rápido en el Dashboard a los Ajustes Forzosos del día."""
+
+    def test_dashboard_shows_today_forced_adjustments_with_history_link(self):
+        from decimal import Decimal
+        from django.urls import reverse
+        from django.utils import timezone
+        from products.models import InventoryMovement, Product
+        user = User.objects.create_user(username='duenio_dash', password='pass12345', is_staff=True)
+        alitas = Product.objects.create(sku='ALI', name='Alitas', unit='kg', price=Decimal('3000'))
+        pechuga = Product.objects.create(sku='PEC', name='Pechuga', unit='kg', price=Decimal('5000'))
+        InventoryMovement.objects.create(product=alitas, quantity=Decimal('1.250'), movement_type='AUTO_ADJUST_IN', reference='Venta #1')
+        InventoryMovement.objects.create(product=alitas, quantity=Decimal('0.750'), movement_type='AUTO_ADJUST_IN', reference='Venta #2')
+        InventoryMovement.objects.create(product=pechuga, quantity=Decimal('0.500'), movement_type='AUTO_ADJUST_IN', reference='Venta #3')
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        totals = {row['product__name']: row['total'] for row in response.context['ajustes_forzosos_hoy']}
+        self.assertEqual(totals, {'Alitas': Decimal('2.000'), 'Pechuga': Decimal('0.500')})
+        expected_url = f"{reverse('products:inventory_history')}?movement_type=AUTO_ADJUST_IN&amp;date={timezone.localdate().isoformat()}"
+        self.assertContains(response, expected_url)
+        self.assertContains(response, 'Alitas: 2 kg')
+
+    def test_cashier_does_not_see_forced_adjustments_card(self):
+        from django.contrib.auth.models import Group
+        from django.urls import reverse
+        cajero = User.objects.create_user(username='cajero_dash', password='pass12345')
+        cajero.groups.add(Group.objects.get_or_create(name='Cajero')[0])
+        self.client.force_login(cajero)
+
+        response = self.client.get(reverse('dashboard'))
+
+        self.assertFalse(response.context['ve_ajustes_forzosos'])
+        self.assertNotContains(response, 'movement_type=AUTO_ADJUST_IN')
+        self.assertNotContains(response, 'Hoy no se vendió mercadería sobre stock cero')

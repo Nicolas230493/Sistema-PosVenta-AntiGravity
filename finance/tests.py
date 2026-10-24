@@ -37,6 +37,9 @@ class CashValidationTests(TestCase):
         self.assertEqual(CashExpense.objects.count(), 0)
 
     def test_cash_report_pdf_exports_without_payment_method_key_error(self):
+        # Reporte X de caja abierta: solo lo ve el Administrador (SPEC-UI-12 §12.1)
+        self.user.is_superuser = True
+        self.user.save()
         session = CashSession.objects.create(
             user=self.user,
             initial_amount=Decimal('100.00'),
@@ -253,6 +256,84 @@ class BlindCloseTests(TestCase):
         response = self.client.get(reverse('finance:cash_session_report', args=[self.session.id]))
 
         self.assertEqual(response.status_code, 302)
+
+    def test_manager_close_is_also_blind(self):
+        """SPEC-UI-12 §12.1: solo Superuser / Administradores ven el esperado; un Encargado no."""
+        from django.contrib.auth.models import Group
+        encargado = User.objects.create_user(username='encargado_ciego', password='pass12345')
+        encargado.groups.add(Group.objects.get_or_create(name='Encargados')[0])
+        self._sell('1.000', [{'method_id': self.cash.id, 'amount': '1234.56'}, {'method_id': self.qr.id, 'amount': '2765.44'}])
+        self.client.force_login(encargado)
+
+        response = self.client.get(reverse('finance:close_cash'))
+
+        self.assertTrue(response.context['blind'])
+        self.assertNotContains(response, '2234,56')
+        self.assertContains(response, 'Efectivo Físico en Cajón ($)')
+        self.assertContains(response, 'Total Comprobantes Digitales / Transferencias / Tarjetas ($)')
+        self.assertContains(response, 'Observaciones de Cierre')
+
+    def _encargado(self):
+        from django.contrib.auth.models import Group
+        encargado = User.objects.create_user(username='encargado_caja', password='pass12345')
+        encargado.groups.add(Group.objects.get_or_create(name='Encargados')[0])
+        return encargado
+
+    def test_manager_cannot_deduce_expected_from_other_screens(self):
+        """SPEC-UI-12 §12.1: con la caja abierta, ninguna pantalla le muestra el esperado al Encargado."""
+        self._sell('1.000', [{'method_id': self.cash.id, 'amount': '1234.56'}, {'method_id': self.qr.id, 'amount': '2765.44'}])
+        self.client.force_login(self._encargado())
+
+        dashboard = self.client.get(reverse('finance:cash_dashboard'))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertTrue(dashboard.context['blind'])
+        self.assertIsNone(dashboard.context['profit_stats'])
+        self.assertEqual(dashboard.context['other_payments'], [])
+        for leaked in ('2234,56', '1234,56', '2765,44', 'Esperado en Caja', 'Ventas Hoy'):
+            self.assertNotContains(dashboard, leaked)
+
+        report = self.client.get(reverse('finance:cash_session_report', args=[self.session.id]))
+        self.assertTrue(report.context['blind'])
+        for leaked in ('2234,56', '1234,56', '2765,44'):
+            self.assertNotContains(report, leaked)
+
+        pdf = self.client.get(reverse('finance:export_cash_report', args=[self.session.id]))
+        self.assertRedirects(pdf, reverse('finance:cash_dashboard'), fetch_redirect_response=False)
+        whatsapp = self.client.get(reverse('finance:whatsapp_report', args=[self.session.id]))
+        self.assertRedirects(whatsapp, reverse('finance:cash_dashboard'), fetch_redirect_response=False)
+
+    def test_manager_sees_figures_after_close_and_admin_always(self):
+        self._sell('1.000', [{'method_id': self.cash.id, 'amount': '1234.56'}, {'method_id': self.qr.id, 'amount': '2765.44'}])
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse('finance:cash_dashboard')), '2234,56')
+
+        encargado = self._encargado()
+        self.client.force_login(encargado)
+        self.client.post(reverse('finance:close_cash'), {'declared_cash': '2234.56', 'declared_digital': '2765.44'})
+        report = self.client.get(reverse('finance:cash_session_report', args=[self.session.id]))
+        self.assertFalse(report.context['blind'])
+        self.assertContains(report, '2234,56')
+        pdf = self.client.get(reverse('finance:export_cash_report', args=[self.session.id]))
+        self.assertEqual(pdf['Content-Type'], 'application/pdf')
+
+    def test_close_screen_and_report_show_forced_adjustments_with_cashier(self):
+        """SPEC-UI-12 §12.2: Hora | Producto | Kilos/Unid. Ajustados | Valorizado ($) | Cajero."""
+        self._sell('3.000', [{'method_id': self.cash.id, 'amount': '12000'}])
+        self.client.force_login(self.cajero)
+
+        response = self.client.get(reverse('finance:close_cash'))
+
+        self.assertContains(response, 'Ajustes Forzosos del turno')
+        self.assertContains(response, 'Kilos/Unid. Ajustados')
+        self.assertContains(response, '<td>cajero_ciego</td>', html=True)
+        self.assertEqual(response.context['adjustments'][0]['user'], 'cajero_ciego')
+        self.assertEqual(response.context['adjustments_total'], Decimal('8000.00'))
+
+        self.client.post(reverse('finance:close_cash'), {'declared_cash': '13000', 'declared_digital': '0'})
+        self.client.force_login(self.admin)
+        report = self.client.get(reverse('finance:cash_session_report', args=[self.session.id]))
+        self.assertContains(report, 'Valorizado ($)')
+        self.assertContains(report, '<td>cajero_ciego</td>', html=True)
 
 
 class NetProfitTests(TestCase):

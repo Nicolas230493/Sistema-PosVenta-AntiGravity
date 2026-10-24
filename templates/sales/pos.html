@@ -1,9 +1,24 @@
 {% extends 'base.html' %}
 {% load static %}
+{% block topbar_status %}
+<!-- SPEC-PWA-11 §11.2: semáforo de conexión y ventas pendientes (lo actualiza pos-offline.js) -->
+<div class="d-flex flex-wrap align-items-center justify-content-end gap-2 me-3" role="status" aria-live="polite">
+    <span id="pos-net-badge" class="badge rounded-pill px-3 py-2 bg-success-subtle text-success-emphasis fw-normal">
+        <i class="bi bi-circle-fill me-1 small"></i><span id="pos-net-text">Conectado</span>
+    </span>
+    <span id="pos-pending-badge" class="badge rounded-pill px-3 py-2 bg-info-subtle text-info-emphasis d-none">
+        <i class="bi bi-arrow-repeat me-1"></i><span id="pos-pending-text"></span>
+    </span>
+    <button type="button" id="pos-sync-now" class="btn btn-sm btn-outline-primary rounded-pill d-none">
+        <i class="bi bi-arrow-repeat me-1"></i>Sincronizar ahora
+    </button>
+</div>
+{% endblock %}
+
 {% block content %}
-<!-- SPEC-SYNC-05: indicador de modo sin conexión / sincronización -->
-<div id="offline-indicator" class="alert alert-danger border-0 shadow-sm fw-bold d-none sticky-top" role="status">
-    <i class="bi bi-wifi-off me-2"></i><span id="offline-indicator-text"></span>
+<!-- SPEC-SYNC-05 / SPEC-PWA-11: ventas offline que el servidor rechazó al sincronizar -->
+<div id="offline-indicator" class="alert alert-danger border-0 shadow-sm fw-bold d-none sticky-top" role="alert">
+    <i class="bi bi-exclamation-octagon me-2"></i><span id="offline-indicator-text"></span>
 </div>
 {% if session_from_previous_day %}
 <div class="alert alert-warning border-0 shadow-sm d-flex justify-content-between align-items-center">
@@ -19,7 +34,7 @@
         (function () {
             let width = '80';
             try { width = localStorage.getItem('pos_ticket_width') || '80'; } catch (e) { /* sin storage */ }
-            window.open("{% url 'sales:ticket_escpos' pk=last_sale_id %}?w=" + width, "_blank");
+            window.open("{% url 'sales:ticket_escpos' pk=last_sale_id %}?width=" + width, "_blank");
         })();
     </script>
 {% endif %}
@@ -193,17 +208,17 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <label class="form-label small fw-bold">Efectivo contado en caja</label>
+                <label class="form-label small fw-bold">Efectivo Físico en Cajón ($)</label>
                 <div class="input-group mb-3">
                     <span class="input-group-text border-0 bg-light">$</span>
                     <input type="number" name="declared_cash" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01">
                 </div>
-                <label class="form-label small fw-bold">Comprobantes digitales (Transf./QR/Tarjeta)</label>
+                <label class="form-label small fw-bold">Total Comprobantes Digitales / Transferencias / Tarjetas ($)</label>
                 <div class="input-group mb-3">
                     <span class="input-group-text border-0 bg-light">$</span>
                     <input type="number" name="declared_digital" class="form-control border-0 bg-light fw-bold" required min="0" step="0.01" value="0">
                 </div>
-                <input type="text" name="notes" class="form-control border-0 bg-light" placeholder="Observaciones (opcional)">
+                <input type="text" name="notes" class="form-control border-0 bg-light" placeholder="Observaciones de Cierre (opcional)">
             </div>
             <div class="modal-footer border-0 p-4 pt-0">
                 <button type="submit" class="btn btn-danger w-100 rounded-pill fw-bold">CERRAR CAJA</button>
@@ -609,7 +624,7 @@
 <script>
     window.POS_OFFLINE_CONFIG = {
         posUrl: "{% url 'sales:pos' %}",
-        swUrl: "{% url 'sales:service_worker' %}",
+        swUrl: "{% url 'service_worker_root' %}",
         catalogUrl: "{% url 'sales:pos_catalog' %}",
         syncUrl: "{% url 'sales_sync' %}"
     };

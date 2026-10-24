@@ -11,6 +11,9 @@ urlpatterns = [
     path('products/', include('products.urls')),
     path('pos/', include('sales.urls')),
     path('api/sales/sync/', sales_views.sync_sales, name='sales_sync'),
+    # SPEC-PWA-11 §11.1: Service Worker y manifiesto en la raíz (alcance '/')
+    path('sw.js', sales_views.service_worker, name='service_worker_root'),
+    path('manifest.json', sales_views.web_manifest, name='web_manifest'),
     path('customers/', include('customers.urls')),
     path('finance/', include('finance.urls')),
     path('users/', include('users.urls')),

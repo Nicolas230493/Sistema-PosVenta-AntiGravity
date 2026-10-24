@@ -1,0 +1,44 @@
+<!-- SPEC-FIN-06 §6.2 / SPEC-UI-12 §12.2: Panel de Ajustes Forzosos (AUTO_ADJUST_IN del turno) -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-header bg-transparent border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-diamond text-warning me-2"></i>Ajustes Forzosos del turno</h5>
+        <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">{{ adjustments|length }} movimiento{{ adjustments|length|pluralize }}</span>
+    </div>
+    <div class="card-body px-4">
+        <p class="small opacity-75">Ventas en descubierto: mercadería vendida sin stock cargado (desposte no registrado). Se generaron movimientos <code>AUTO_ADJUST_IN</code> automáticamente.</p>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th>Hora</th>
+                        <th>Producto</th>
+                        <th class="text-end">Kilos/Unid. Ajustados</th>
+                        <th class="text-end">Valorizado ($)</th>
+                        <th>Cajero</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in adjustments %}
+                    <tr>
+                        <td class="small">{{ row.date|date:"H:i" }}</td>
+                        <td>
+                            <span class="fw-bold">{{ row.product }}</span>
+                            <div class="small opacity-75">Venta #{{ row.sale_id }} · ${{ row.unit_price }}/{{ row.unit }}</div>
+                        </td>
+                        <td class="text-end">{{ row.quantity|floatformat:"-3" }} {{ row.unit }}</td>
+                        <td class="text-end fw-bold">${{ row.amount }}</td>
+                        <td>{{ row.user }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-4 opacity-50">Sin ajustes forzosos en este turno.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if adjustments %}
+                <tfoot>
+                    <tr><th colspan="3" class="text-end">Total</th><th class="text-end">${{ adjustments_total }}</th><th></th></tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>

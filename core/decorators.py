@@ -22,9 +22,12 @@ def es_encargado_o_admin(user):
     )
 
 
-def es_cajero_ciego(user):
-    """SPEC-FIN-06 §6.1: los Cajeros (que no sean Superuser/Administrador) cierran caja sin ver el esperado."""
-    return user.groups.filter(name__in=CASHIER_GROUPS).exists() and not es_administrador(user)
+def es_arqueo_ciego(user):
+    """
+    SPEC-FIN-06 §6.1 / SPEC-UI-12 §12.1: solo Superuser y grupo Administrador(es) ven el efectivo
+    esperado al cerrar caja; el resto (Cajeros, Encargados) declara a ciegas.
+    """
+    return not es_administrador(user)
 
 
 def _role_required(check, error_message):

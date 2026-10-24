@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.db.models import F, Sum, Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
-from products.models import Product, StockLoss
+from products.models import InventoryMovement, Product, StockLoss
 from sales.models import Sale, SaleDetail
 from customers.models import Customer
 from django.db.models.functions import ExtractHour
@@ -213,6 +213,16 @@ def dashboard_view(request):
     # 4. Contexto para el template
     last_month = today - timedelta(days=30)
     bajas_recientes = StockLoss.objects.filter(date__gte=last_month).select_related('product').order_by('-date')
+
+    # SPEC-UI-12 §12.2: kilos/unidades vendidos hoy sobre stock cero (desposte no cargado).
+    # Es una auditoría para el dueño / encargado: los Cajeros no la ven.
+    ve_ajustes_forzosos = es_encargado_o_admin(request.user)
+    ajustes_forzosos_hoy = list(
+        InventoryMovement.objects.filter(movement_type='AUTO_ADJUST_IN', date__date=today)
+        .values('product__name', 'product__unit')
+        .annotate(total=Sum('quantity'))
+        .order_by('-total')
+    ) if ve_ajustes_forzosos else []
     
     context = {
         'agotados': agotados,
@@ -224,6 +234,9 @@ def dashboard_view(request):
         'puede_liquidar': es_encargado_o_admin(request.user),
         'wa_url': wa_url,
         'bajas_recientes': bajas_recientes[:10],
+        've_ajustes_forzosos': ve_ajustes_forzosos,
+        'ajustes_forzosos_hoy': ajustes_forzosos_hoy,
+        'ajustes_forzosos_url': f"{reverse('products:inventory_history')}?movement_type=AUTO_ADJUST_IN&date={today.isoformat()}",
         'hour_labels': json.dumps(hour_labels),
         'hour_data': json.dumps(hour_data),
         'totales': {
