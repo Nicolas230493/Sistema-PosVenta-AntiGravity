@@ -1,0 +1,196 @@
+RESUMEN DE TODO LO HECHO Y LO QUE FALTA — Impulso Smart POS
+Fecha: 24/10/2026
+
+======================================================================
+0. ESTADO ACTUAL (dónde está cada cosa)
+======================================================================
+- Todo está en main (una sola rama) y subido a GitHub:
+    eef043d  Specs 11 a 14 (sección 1)
+    187c960  Specs desde 11 al 15, Arreglo de Bugs y errores, Principio de
+             Diseño UX/UI 24-10 (secciones 3 a 7, 37 archivos)
+    + el commit que agrega este archivo.
+  La rama de trabajo codigo-barras se borró al pasar todo a main.
+- Tests: 160 OK.
+  `manage.py check` y `makemigrations --check` sin problemas.
+- Migraciones NUEVAS (no aplicadas a db.sqlite3 local):
+    core/migrations/0006_configuracionsistema_balanza_digitos_plu_and_more.py
+    products/migrations/0021_product_plu.py
+    products/migrations/0022_product_active.py
+  db.sqlite3 está igual que antes (se trabajó sobre una copia para la demo).
+- Plugins de Claude Code instalados: frontend-design y playground.
+
+======================================================================
+1. EN MAIN: SPECS 11 A 14 (commit eef043d)
+======================================================================
+Detalle completo en IMPLEMENTADO_SPECS_11_A_14.txt. Resumen:
+- SPEC-PWA-11: /sw.js y /manifest.json en la raíz, IndexedDB ImpulsoPOS_DB
+  (catálogo + cola de ventas offline) con migración de la cola vieja,
+  semáforo Conectado / Sin conexión / Ventas por sincronizar y botón
+  "Sincronizar ahora", renovación del token CSRF y errores visibles.
+- SPEC-UI-12: arqueo ciego para todo el que no es Administrador (sin el
+  esperado ni sus componentes con la caja abierta), tabla de ajustes
+  forzosos con cajero, tarjeta en el Dashboard e historial filtrable.
+- SPEC-QA-13: test E2E "Día completo en pollería" y stress test del CSV.
+- SPEC-OPS-14: staticfiles/.gitkeep, ticket 58/80 mm con .no-print,
+  Chart.js fijado en 4.6.1.
+
+======================================================================
+2. PRUEBAS DE DISEÑO (nada de esto está en el código)
+======================================================================
+- Dataviz sobre el Dashboard: probado y DESCARTADO (rama borrada).
+- Maquetas privadas en claude.ai (solo las ve el dueño de la cuenta):
+    Propuesta A (reordenar el POS):
+      https://claude.ai/artifact/TVEH6Tkg4maBzHvnpGzvEp
+    Propuesta B (mostrador con balanza y teclado de peso):
+      https://claude.ai/artifact/RA5Ew8VMEfXAikstA4F7kT
+    Propuesta C (mezcla A + B, interactiva):
+      https://claude.ai/artifact/9dvyLiAthM8X15Laa71KVy
+    Sistema completo con la propuesta C (Dashboard, Cierre de caja,
+    Productos, Ficha de cliente):
+      https://claude.ai/artifact/JehenLWjAC9o7cC2RrA9ww
+- Playground de colores y tamaños del POS (archivo temporal, se borra al
+  cerrar la sesión de Claude): scratchpad/playground/pos-playground.html
+- Plan propuesto para llevar el diseño al código (NO empezado):
+    Etapa 0 Base (variables de diseño en base.html: afecta las 53 pantallas)
+    Etapa 1 Mostrador (POS, cobro, ticket)
+    Etapa 2 Caja (apertura, cierre, reportes de turno, pedidos, historial)
+    Etapa 3 Gestión (productos, compras, proveedores, clientes, usuarios)
+    Etapa 4 Tableros (Dashboard, BI, reportes)
+  Cada etapa en su rama de prueba, nunca directo en main.
+
+======================================================================
+3. CÓDIGO DE BARRAS
+======================================================================
+Sin cambiar lo que ya funcionaba (escáner USB del POS, ingreso de stock de
+a uno, etiquetas PDF):
+- Etiquetas de balanza EAN-13 (prefijos 20-29) en el POS: cargan el peso
+  exacto; si el producto ya está en el ticket se suma a su línea. Funciona
+  sin conexión (misma lógica en Python y JavaScript, verificada igual).
+  Configuración > "Balanza con etiquetas": peso o importe, 4/5/6 dígitos
+  de PLU. Nuevo campo "PLU de balanza" en cada producto.
+- Recepción por escáner (menú lateral): proveedor, escaneo con lector o
+  cámara, cantidades y costos, confirmación única. Se registra como una
+  compra normal (stock + costo promedio CPP + movimientos). Borrador
+  guardado en el equipo.
+- Alta rápida: un código desconocido en la recepción abre un formulario
+  corto con el código ya cargado.
+- Cámara (celular/tablet/webcam) en POS, ingreso de stock y recepción:
+  lector nativo del navegador o ZXing 0.21.3 como respaldo.
+  IMPORTANTE: la cámara solo funciona con https o en localhost.
+Archivos nuevos: products/barcodes.py, static/js/barcode-tools.js,
+templates/products/stock_reception.html.
+
+======================================================================
+4. ERRORES CORREGIDOS (con test de regresión)
+======================================================================
+Todos tienen prueba en core/tests_bugs.py (13 de 15 fallaban con el código
+de main, o sea que detectan el error) o en sales/tests.py.
+ 1. Venta con dos líneas del mismo producto: solo descontaba del stock la
+    última (podía llegar así por la sincronización offline).
+ 2. Pago de cliente imposible: el selector de medio de pago salía vacío.
+ 3. Estado de cuenta: el pago guardaba el saldo anterior como "resultante".
+ 4. Cierre de caja: solo contaba los cobros a clientes del usuario que
+    abrió la caja.
+ 5. Devoluciones repetidas del mismo artículo (stock y reintegro inflados).
+ 6. Reporte Fiscal (IVA Ventas) incluía ventas anuladas y señas pendientes.
+ 7. Dashboard: "Ventas Hoy" sumaba anuladas y el efectivo del resumen de
+    WhatsApp salía siempre $0. Mermas informadas al costo.
+ 8. Caja y Rentabilidad: ventas y costo del día incluían anuladas.
+ 9. Informes/BI: gráficos rotos (Decimal en JavaScript), "Hoy"/"Mes" en
+    hora UTC, anuladas incluidas, ranking de proveedores vacío y ganancia
+    neta distinta a la de "Ganancia Neta". Excel avanzado sin anuladas.
+10. Actualización masiva de precios: error 500 con "10,5" o categoría
+    inexistente, precios con más de 2 decimales, sin historial.
+11. Eliminar un producto con devoluciones: error 500.
+12. Roles: BI y precios rechazaban al grupo "Administrador"; el menú solo
+    miraba el primer grupo del usuario.
+13. Seguridad: nombres con HTML se ejecutaban en el buscador global, el
+    carrito del POS, la carga de compras y un <script> del POS.
+
+======================================================================
+5. PRECIOS: QUIÉN LOS CAMBIA Y SU HISTORIAL
+======================================================================
+- Solo el superadministrador y el dueño (grupo Administrador/Administradores)
+  cambian precio de venta y costo de un producto existente:
+    · Formulario de producto: campos bloqueados para otros roles.
+    · Importación CSV/Excel de otro rol: actualiza el resto de los datos,
+      no los precios, y avisa cuántos quedaron sin cambiar.
+    · Barrera final en el guardado: cualquier otro camino se rechaza.
+- El historial registra usuario y motivo (antes el usuario quedaba vacío),
+  incluidos los cambios manuales de costo.
+- Kardex de cada producto: nueva tabla "Historial de precios".
+- El costo por compras (CPP) sigue siendo automático para quien recibe.
+
+======================================================================
+6. DESACTIVAR PRODUCTOS EN LUGAR DE BORRARLOS
+======================================================================
+- Sin historial: se borra como antes.
+- Con historial (ventas, compras, devoluciones, movimientos, mermas o
+  precios): se DESACTIVA. Sale del POS, catálogo offline, escáner,
+  buscador, alertas, sugerencias y formularios de compra; sus registros y
+  los reportes pasados se conservan.
+- Productos > "Ver desactivados (N)" con botón Reactivar.
+- Una venta offline hecha antes de desactivar se sincroniza igual.
+
+======================================================================
+7. WHATSAPP
+======================================================================
+- Teléfonos normalizados al formato de wa.me (549 + área + número, sin 0
+  ni 15) en ticket, estado de cuenta y recordatorio de deuda.
+  Ej.: "011 15 5555-1234" -> 5491155551234. Sin código de área: se avisa.
+- Archivo nuevo: customers/phones.py.
+
+======================================================================
+8. LO QUE FALTA / PARA DECIDIR
+======================================================================
+Para dejarlo andando en producción
+- [ ] Probar en el navegador con los equipos reales:
+      · lector USB en POS, ingreso de stock y recepción;
+      · una etiqueta REAL de la balanza: confirmar prefijo, cantidad de
+        dígitos de PLU y si trae peso o importe (ajustar en Configuración);
+      · cámara del celular contra el sitio en https (Render);
+      · desactivar/reactivar un producto; editar precios con un usuario
+        Encargado (deben verse bloqueados) y con el dueño.
+- [x] Pasar todo a main y subirlo a GitHub (24/10).
+- [ ] Verificar el despliegue en Render: build.sh corre `migrate` con las
+      3 migraciones nuevas. En local, copiar db.sqlite3 antes de migrar.
+- [ ] Decidir: el PRECIO INICIAL al crear un producto ¿lo puede poner
+      cualquier rol con acceso (como ahora) o solo el dueño?
+
+Pruebas manuales pendientes de antes
+- [ ] Specs 11-14: modo offline (DevTools > Network > Offline, vender,
+      volver a Online), instalar la PWA, imprimir ticket 58 y 80 mm.
+- [ ] Specs 6-10: cobro con varios medios en el POS con clics reales.
+
+Decisiones de negocio pendientes (de las specs 6-10)
+- [ ] ¿"Ventas Netas" con o sin IVA en la Ganancia Neta?
+- [ ] ¿Ajustes forzosos valuados al costo o al precio de venta?
+- [ ] Envío de reportes por email: el proyecto no tiene correo configurado.
+
+Diseño (si se avanza)
+- [ ] Elegir dirección (recomendado: propuesta C + sistema completo).
+- [ ] Usar el playground para fijar colores/tamaños y pasar el texto.
+- [ ] Implementar por etapas (0 a 4), cada una en su rama de prueba.
+
+Mejoras sugeridas, no hechas
+- [ ] Generar códigos internos e imprimir etiquetas para productos sin
+      código (milanesas, preparados).
+- [ ] Los cobros a clientes se asignan a la caja por fecha (correcto
+      mientras haya una sola caja); si algún día hay varias cajas, conviene
+      vincular el pago a la sesión de caja.
+
+Limpieza
+- [ ] Archivos sueltos en la raíz: test_barcode.py (script viejo que genera
+      imágenes) y prueba.txt. Revisar si se borran.
+- [ ] Servidor de demostración en http://127.0.0.1:8765 (base de prueba con
+      datos de ejemplo): apagarlo cuando no se use.
+- [ ] Plugins frontend-design y playground: desinstalar si no se van a usar
+      (`claude plugin uninstall <nombre>`).
+
+======================================================================
+9. CÓMO VERIFICAR
+======================================================================
+  git checkout main
+  .venv/bin/python manage.py check
+  .venv/bin/python manage.py makemigrations --check --dry-run
+  .venv/bin/python manage.py test            # 160 tests
